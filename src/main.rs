@@ -6,318 +6,11 @@ use image::{imageops::FilterType, ImageFormat};
 
 mod error;
 mod wowsreplay;
+mod packet;
 
 use error::*;
 use wowsreplay::*;
-
-#[derive(Debug)]
-struct PositionPacket {
-    pid: u32,
-    //clock: f32,
-    x: f32,
-    y: f32,
-    z: f32,
-    rot_x: u32,
-    rot_y: u32,
-    rot_z: u32,
-    a: f32, // These three appear to be velocity in x,y,z (perhaps local? Forward/back velocity and side-to-side drift?)
-    b: f32,
-    c: f32,
-    extra: u8,
-    //raw: &'a [u8],
-}
-
-#[derive(Debug)]
-struct EntityPacket<'a> {
-    supertype: u32,
-    entity_id: u32,
-    subtype: u32,
-    payload: &'a [u8],
-}
-
-#[derive(Debug)]
-struct ChatPacket<'a> {
-    entity_id: u32, // TODO: Is entity ID different than sender ID?
-    sender_id: u32,
-    audience: &'a str,
-    message: &'a str,
-}
-
-#[derive(Debug)]
-struct TimingPacket {
-    time: u32,
-}
-
-#[derive(Debug)]
-struct Type24Packet {
-    f0: f32,
-    f1: f32,
-    f2: f32,
-    f3: f32,
-    f4: f32,
-    f5: f32,
-    f6: f32,
-    f7: f32,
-    f8: f32,
-    f9: f32,
-    f10: f32,
-    f11: f32,
-    f12: f32,
-    f13: f32,
-}
-
-/// This appears to be camera position.
-/// PID (or maybe sub_object_id?) appears to be what the camera is attached to.
-/// Then there is a follow-up packet (of this type) which describes the
-/// (relative?) position
-#[derive(Debug)]
-struct Type2bPacket {
-    pid: u32,
-    sub_object_id: u32,
-    f0: f32, // Appears to be a coordinate - X or Z
-    f1: f32, // Unknown? (possibly Y?)
-    f2: f32, // Appears to be a coordinate - X or Z
-    f3: f32, // Appears to be a rotation of some sort? (wraps at pi)
-    f4: f32,
-    f5: f32,
-}
-
-#[derive(Debug)]
-enum PacketType<'a> {
-    Position(PositionPacket),
-    Entity(EntityPacket<'a>), // 0x7 and 0x8 are known to be of this type
-    Chat(ChatPacket<'a>),
-    Timing(TimingPacket),
-    Type24(Type24Packet),
-    Type2b(Type2bPacket),
-    Type8_79(Vec<(u32, u32)>),
-    Unknown(&'a [u8]),
-}
-
-#[derive(Debug)]
-struct Packet<'a> {
-    packet_size: u32,
-    packet_type: u32,
-    clock: f32,
-    payload: PacketType<'a>,
-    raw: &'a [u8],
-}
-
-fn parse_type_2b_packet(i: &[u8]) -> IResult<&[u8], PacketType> {
-    assert!(i.len() == 0x20);
-    let (i, pid) = le_u32(i)?;
-    let (i, sub_object_id) = le_u32(i)?;
-    let (i, f0) = le_f32(i)?;
-    let (i, f1) = le_f32(i)?;
-    let (i, f2) = le_f32(i)?;
-    let (i, f3) = le_f32(i)?;
-    let (i, f4) = le_f32(i)?;
-    let (i, f5) = le_f32(i)?;
-    Ok((
-        i,
-        PacketType::Type2b(Type2bPacket{
-            pid, sub_object_id, f0, f1, f2, f3, f4, f5,
-        })
-    ))
-}
-
-/// Perhaps camera data or something?
-fn parse_type_24_packet(i: &[u8]) -> IResult<&[u8], PacketType> {
-    assert!(i.len() == 56);
-    let (i, f0) = le_f32(i)?;
-    let (i, f1) = le_f32(i)?;
-    let (i, f2) = le_f32(i)?;
-    let (i, f3) = le_f32(i)?;
-    let (i, f4) = le_f32(i)?;
-    let (i, f5) = le_f32(i)?;
-    let (i, f6) = le_f32(i)?;
-    let (i, f7) = le_f32(i)?;
-    let (i, f8) = le_f32(i)?;
-    let (i, f9) = le_f32(i)?;
-    let (i, f10) = le_f32(i)?;
-    let (i, f11) = le_f32(i)?;
-    let (i, f12) = le_f32(i)?;
-    let (i, f13) = le_f32(i)?;
-    Ok((
-        i,
-        PacketType::Type24(Type24Packet{
-            f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13,
-        })
-    ))
-}
-
-/// Note! There are actually two types of timing packets, which always seem to
-/// mirror each other. ID N is immediately followed by ID N+1 w/ matching
-/// counter. The counter seems to increment ~ once per ms
-fn parse_timing_packet(i: &[u8]) -> IResult<&[u8], PacketType> {
-    let (i, time) = le_u32(i)?;
-    let (i, zero) = le_u32(i)?;
-    assert!(zero == 0); // What does this field mean?
-    Ok((
-        i,
-        PacketType::Timing(TimingPacket{
-            time,
-        })
-    ))
-}
-
-fn parse_chat_packet(entity_id: u32, i: &[u8]) -> IResult<&[u8], PacketType> {
-    let (i, sender) = le_u32(i)?;
-    let (i, audience_len) = be_u8(i)?;
-    let (i, audience) = take(audience_len)(i)?;
-    let (i, message_len) = be_u8(i)?;
-    let (i, message) = take(message_len)(i)?;
-    Ok((
-        i,
-        PacketType::Chat(ChatPacket{
-            entity_id: entity_id,
-            sender_id: sender,
-            audience: std::str::from_utf8(audience).unwrap(),
-            message: std::str::from_utf8(message).unwrap(),
-        })
-    ))
-}
-
-fn parse_8_79_subobject(i: &[u8]) -> IResult<&[u8], (u32, u32)> {
-    let (i, pid) = le_u32(i)?;
-    let (i, data) = le_u32(i)?;
-    Ok((
-        i,
-        (pid, data),
-    ))
-}
-
-fn parse_8_79_packet(i: &[u8]) -> IResult<&[u8], PacketType> {
-    //hexdump::hexdump(i);
-    let (i, num_objects) = be_u8(i)?;
-    let (i, objects) = count(parse_8_79_subobject, num_objects.try_into().unwrap())(i)?;
-    let (i, b) = be_u8(i)?;
-    assert!(b == 0); // What does this field do?
-    assert!(i.len() == 0);
-    Ok((
-        i,
-        PacketType::Type8_79(objects),
-    ))
-}
-
-fn parse_entity_packet(supertype: u32, i: &[u8]) -> IResult<&[u8], PacketType> {
-    let (i, entity_id) = le_u32(i)?;
-    //println!("Unknown: 0x{:x}", unknown);
-    let (i, subtype) = le_u32(i)?; // Probably?
-    let (i, payload_length) = le_u32(i)?;
-    let (i, payload) = take(payload_length)(i)?;
-    // Note: These subtype numbers seem to change with version (0x76 -> 0x79? 0x3d/0x3e -> 0x3e/0x3f?)
-    if supertype == 0x8 {
-        if subtype == 0x76 {
-            Ok((
-                i,
-                parse_chat_packet(entity_id, payload)?.1
-            ))
-        } else if subtype == 0x3d || subtype == 0x3e {
-            Ok((
-                i,
-                parse_timing_packet(payload)?.1
-            ))
-        } else if subtype == 0x79 {
-            Ok((
-                i,
-                parse_8_79_packet(payload)?.1
-            ))
-        } else {
-            Ok((
-                i,
-                PacketType::Entity(EntityPacket{
-                    supertype: supertype,
-                    entity_id: entity_id,
-                    subtype: subtype,
-                    payload: payload,
-                })
-            ))
-        }
-    } else {
-        Ok((
-            i,
-            PacketType::Entity(EntityPacket{
-                supertype: supertype,
-                entity_id: entity_id,
-                subtype: subtype,
-                payload: payload,
-            })
-        ))
-    }
-}
-
-fn parse_position_packet(i: &[u8]) -> IResult<&[u8], PacketType> {
-    let (i, pid) = le_u32(i)?;
-    let (i, zero) = le_u32(i)?;
-    if zero != 0 {
-        panic!("What does this field mean?");
-    }
-    let (i, x) = le_f32(i)?;
-    let (i, y) = le_f32(i)?;
-    let (i, z) = le_f32(i)?;
-    let (i, rot_x) = be_u32(i)?;
-    let (i, rot_y) = be_u32(i)?;
-    let (i, rot_z) = be_u32(i)?;
-    let (i, a) = le_f32(i)?;
-    let (i, b) = le_f32(i)?;
-    let (i, c) = le_f32(i)?;
-    let (i, extra) = be_u8(i)?;
-    Ok((
-        i,
-        PacketType::Position(PositionPacket{
-            pid, x, y, z, rot_x, rot_y, rot_z, a, b, c, extra,
-        })
-    ))
-}
-
-fn parse_unknown_packet(i: &[u8], payload_size: u32) -> IResult<&[u8], PacketType> {
-    let (i, contents) = take(payload_size)(i)?;
-    Ok((
-        i,
-        PacketType::Unknown(contents)
-    ))
-}
-
-fn parse_packet(i: &[u8]) -> IResult<&[u8], Packet> {
-    let (i, packet_size) = le_u32(i)?;
-    let (i, packet_type) = le_u32(i)?;
-    let (i, clock) = le_f32(i)?;
-    let (remaining, i) = take(packet_size)(i)?;
-    let raw = i;
-    let (i, payload) = match packet_type {
-        0x7 | 0x8 => {
-            parse_entity_packet(packet_type, i)?
-        }
-        0xA => {
-            parse_position_packet(i)?
-        }
-        0x24 => {
-            parse_type_24_packet(i)?
-        }
-        0x2b => {
-            parse_type_2b_packet(i)?
-        }
-        _ => {
-            parse_unknown_packet(i, packet_size)?
-        }
-    };
-    assert!(i.len() == 0);
-    Ok((
-        remaining,
-        Packet{
-            packet_size: packet_size,
-            packet_type: packet_type,
-            clock: clock,
-            payload: payload,
-            raw: raw,
-        }
-    ))
-}
-
-fn parse_packets(i: &[u8]) -> IResult<&[u8], Vec<Packet>> {
-    many0(parse_packet)(i)
-}
+use packet::*;
 
 // 0x71xx & 0x72xx are data identifiers for references
 // 0x55 is a length-delimited string (single-byte length)
@@ -517,6 +210,31 @@ fn parse_77(i: &[u8]) -> IResult<&[u8], ()> {
     Ok((i, ()))
 }
 
+fn parse_8_35_part(i: &[u8]) -> IResult<&[u8], (u32, f32)> {
+    let (i, pid) = le_u32(i)?;
+    let (i, damage) = le_f32(i)?;
+    Ok((i, (pid, damage)))
+}
+
+fn parse_8_35(i: &[u8]) -> IResult<&[u8], Vec<(u32, f32)>> {
+    let (i, cnt) = be_u8(i)?;
+    let (i, data) = count(parse_8_35_part, cnt.try_into().unwrap())(i)?;
+    assert!(i.len() == 0);
+    Ok((i, data))
+}
+
+// From https://stackoverflow.com/questions/35901547/how-can-i-find-a-subsequence-in-a-u8-slice
+fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|window| window == needle)
+}
+
+fn find_float_approx(haystack: &[u8], needle: f32, epsilon: f32) -> Option<usize> {
+    haystack.windows(4).position(|window| {
+        let x = f32::from_le_bytes(window.try_into().unwrap());
+        (x.abs() - needle).abs() <= epsilon
+    })
+}
+
 fn parse_replay(replay: &std::path::PathBuf) {
     let replay_file = ReplayFile::from_file(replay);
 
@@ -529,6 +247,16 @@ fn parse_replay(replay: &std::path::PathBuf) {
         .y_label_area_size(0)
         .build_ranged(-scale..scale, -scale..scale).unwrap();
 
+    // Search it for damage values:
+    // - 1848: Damage to player
+    // - 10292: Damage to Gneisenau PhantomBR_1
+    //let needle = [0x34, 0x28];//, 0x00, 0x00];
+    //let needle = [0xd8, 0x4, 0x0, 0x0]; // An overpen
+    //let needle = [0x66, 0x1e, 0x00, 0x00]; // Enemy ship's HP (7782, VeryHonorabru)
+    //let needle = [0x04, 0x74, 0x0, 0x0];
+    //let needle = [0x00, 0x72, 0x17, 0x47];//, 0x00, 0x00];
+    let needle = 323.0;//60650.0;//0.79122489796;//38770.0;
+
     // Parse packets
     let (remaining, packets) = parse_packets(&replay_file.packet_data).unwrap();
     let mut points = HashMap::new();
@@ -539,6 +267,14 @@ fn parse_replay(replay: &std::path::PathBuf) {
     let mut d4 = vec!();
     let mut d5 = vec!();
     for packet in packets.iter() {
+        /*if let Some(x) = find_subsequence(packet.raw, &needle) {
+            println!("Found needle subpattern!");
+            hexdump::hexdump(packet.raw);
+        }*/
+        if let Some(x) = find_float_approx(packet.raw, needle, needle / 100.0) {
+            println!("Found needle subpattern!");
+            hexdump::hexdump(packet.raw);
+        }
         match packet {
             Packet { clock, payload: PacketType::Position(p), .. } => {
                 if !points.contains_key(&p.pid) {
@@ -564,7 +300,7 @@ fn parse_replay(replay: &std::path::PathBuf) {
                         // 8-bit "count of objects" (each object is 20 bytes)
                         // Some f32 data, I guess
                         println!("{}: Got 0x8 0x6f packet!", clock);
-                        //hexdump::hexdump(p.payload);
+                        hexdump::hexdump(p.payload);
                     } else if p.subtype == 0x45 {
                         // Appears to be always the same?
                         // Player ID followed by 5 bytes
@@ -577,12 +313,40 @@ fn parse_replay(replay: &std::path::PathBuf) {
                     } else if p.subtype == 0x79 {
                         println!("{}: Got 0x8 0x79 packet!", clock);
                         hexdump::hexdump(p.payload);
+                    } else if p.subtype == 0x63 {
+                        println!("{}: Got 0x8 0x63 packet! (volley hit?)", clock);
+                        hexdump::hexdump(p.payload);
+                    } else if p.subtype == 0x35 {
+                        println!("{}: Got 0x8 0x35 packet! (Damage received) entity_id=0x{:x}", clock, p.entity_id);
+                        hexdump::hexdump(p.payload);
+                    } else if p.subtype == 0xc {
+                        // This is the banners the player receives
+                        // 3: Shot down plane
+                        // 4: Incapacitation
+                        // 6: Set fire
+                        // 8: Citadel
+                        // 13: Secondary hit
+                        // 14: Overpenentration
+                        // 15: Penetration
+                        // 16: Non-penetration
+                        // 17: Ricochet
+                        // 28: Torpedo protection hit
+                        println!("{}: Got 0x8 0xc packet! (banners) entity_id=0x{:x} data={:?}", clock, p.entity_id, p.payload);
+                        assert!(p.payload.len() == 1);
                     } else {
                         println!("{}: Got {}-byte 0x8 packet subtype=0x{:x}", clock, p.payload.len(), p.subtype);
+                        /*if let Some(x) = find_subsequence(p.payload, &needle) {
+                            println!("Found damage subpattern!");
+                            hexdump::hexdump(p.payload);
+                        }*/
                     }
                 } else {
                     assert!(p.supertype == 0x7);
                     println!("{}: Got {}-byte 0x7 packet subtype=0x{:x}", clock, p.payload.len(), p.subtype);
+                    /*if let Some(x) = find_subsequence(p.payload, &needle) {
+                        println!("Found needle subpattern!");
+                        hexdump::hexdump(p.payload);
+                    }*/
                 }
             }
             Packet { clock, payload: PacketType::Chat(p), .. } => {
@@ -608,12 +372,24 @@ fn parse_replay(replay: &std::path::PathBuf) {
             Packet { clock, payload: PacketType::Type8_79(p), .. } => {
                 println!("{:.3}: Got 0x8 0x79: {:?}", clock, p);
             }
+            Packet { clock, packet_type, payload: PacketType::ArtilleryHit(p), .. } => {
+                println!("{}: Got artillery packet damage={} subject=0x{:x}", clock, p.damage, p.subject);
+                //println!("{:#?}", p);
+            }
             Packet { clock, packet_type, payload: PacketType::Unknown(payload), .. } => {
                 //_ => {
                 println!("{}: Got {}-byte packet 0x{:x}", clock, payload.len(), packet_type);
-                if *packet_type == 0x2b {
+                if *packet_type == 0x5 {
+                    if payload[0] == 0xe {
+                        println!("Maybe player ship:");
+                    }
                     hexdump::hexdump(payload);
                 }
+
+                /*if let Some(x) = find_subsequence(payload, &needle) {
+                    println!("Found needle subpattern!");
+                    hexdump::hexdump(payload);
+                }*/
             }
         }
     }
@@ -736,17 +512,65 @@ fn parse_replay(replay: &std::path::PathBuf) {
 
     // Compute a histogram of packets
     let mut packet_counts = HashMap::new();
+    let mut total_damage = 0;
+    let mut banners = HashMap::new();
     for packet in packets.iter() {
         match packet {
+            Packet { clock, packet_type, payload: PacketType::ArtilleryHit(p), .. } => {
+                if !p.is_incoming {
+                    total_damage += p.damage;
+                }
+                println!(
+                    "{}: Got artillery packet: {} 0x{:x} {} {}doing {} damage{}",
+                    clock,
+                    if p.is_incoming { "From" } else { "To" },
+                    p.subject,
+                    if p.is_he { "HE" } else { "AP" },
+                    if p.is_secondary { "secondary " } else { "" },
+                    p.damage,
+                    if p.incapacitations.len() > 0 {
+                        format!(" with incapacitations={:x?}", p.incapacitations)
+                    } else { "".to_string() }
+                );
+                println!("Bitmasks: 0x{:08x} 0x{:08x} 0x{:08x} 0x{:08x} 0x{:08x} 0x{:08x}\n", p.bitmask0, p.bitmask1, p.bitmask2, p.bitmask3, p.bitmask4, p.bitmask5);
+                //println!("{:#?}", p);
+            }
             Packet { clock, payload: PacketType::Entity(p), .. } => {
-                if p.supertype == 0x7 {
+                if p.supertype == 0x8 {
                     if !packet_counts.contains_key(&p.subtype) {
                         packet_counts.insert(p.subtype, 0);
                     }
                     *packet_counts.get_mut(&p.subtype).unwrap() += 1;
-                    if p.subtype == 0x79 {
-                        println!("{}: Got 0x8 0x79 packet!", clock);
-                        hexdump::hexdump(p.payload);
+                    if p.subtype == 0xc {
+                        println!("{}: Got 0x8 0x{:x} packet! payload={:?}", clock, p.subtype, p.payload);
+                        assert!(p.payload.len() == 1);
+                        if !banners.contains_key(&p.payload[0]) {
+                            banners.insert(p.payload[0], 0);
+                        }
+                        *banners.get_mut(&p.payload[0]).unwrap() += 1;
+                        //hexdump::hexdump(p.payload);
+                    }
+                    if p.subtype == 0x35 {
+                        println!("{}: Got 0x8 0x35 packet!", clock);
+                        let (_, v) = parse_8_35(p.payload).unwrap();
+                        /*let (i, cnt) = be_u8::<_, error::Error<&[u8]>>(p.payload).unwrap();
+                        /*let parser = |i: &[u8]| -> IResult<&[u8], (u32, f32)> {
+                            let (i, pid) = le_u32(i)?;
+                            let (i, damage) = le_f32(i)?;
+                            Ok((i, (pid, damage)))
+                        };
+                        let (i, data) = count(parser, cnt as usize)(i).unwrap();*/
+                        let mut v = vec!();
+                        let mut i = i;
+                        for i in 0..cnt {
+                            let (new_i, pid) = le_u32(i).unwrap();
+                            let (new_i, damage) = le_f32(new_i).unwrap();
+                            v.push((pid, damage));
+                            i = new_i;
+                        }
+                        assert!(i.len() == 0);*/
+                        println!("{}: Data: 0x{:x} -> {:x?}", clock, p.entity_id, v);
+                        //hexdump::hexdump(p.payload);
                     }
                 }
             }
@@ -759,6 +583,11 @@ fn parse_replay(replay: &std::path::PathBuf) {
         println!("0x{:x}: {} instances", k, v);
     }
     println!("Found {} different packet types", packet_counts.len());
+    println!("Player did {} damage!", total_damage);
+
+    for (k,v) in banners.iter() {
+        println!("Banner {}: {}x", k, v);
+    }
 
     // Some debugging code
     /*for packet in packets.iter() {
@@ -785,8 +614,13 @@ fn main() {
     for entry in paths {
         let path = entry.path();
         if !path.is_dir() {
-            println!("{:?}", path);
-            parse_replay(&path);
+            //println!("{:?}", path);
+            let replay = ReplayFile::from_file(&path);
+
+            println!("date={} ship={} map={} version={}", replay.meta.dateTime, replay.meta.playerVehicle, replay.meta.mapName, replay.meta.clientVersionFromExe);
+
+            //parse_replay(&path);
+
             //println!("{:?} -> 0x{:x}", path, r);
             //v.push((r,s));
         }
