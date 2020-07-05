@@ -238,6 +238,11 @@ fn find_float_approx(haystack: &[u8], needle: f32, epsilon: f32) -> Option<usize
 fn parse_replay(replay: &std::path::PathBuf) {
     let replay_file = ReplayFile::from_file(replay);
 
+    let version_parts: Vec<_> = replay_file.meta.clientVersionFromExe.split(",").collect();
+    assert!(version_parts.len() == 4);
+    let build: u32 = version_parts[3].parse().unwrap();
+    println!("File build version: {}", build);
+
     let root = BitMapBackend::new("test.png", (2048, 2048)).into_drawing_area();
     root.fill(&BLACK).unwrap();
 
@@ -258,7 +263,7 @@ fn parse_replay(replay: &std::path::PathBuf) {
     let needle = 323.0;//60650.0;//0.79122489796;//38770.0;
 
     // Parse packets
-    let (remaining, packets) = parse_packets(&replay_file.packet_data).unwrap();
+    let (remaining, packets) = parse_packets(build, &replay_file.packet_data).unwrap();
     let mut points = HashMap::new();
     let mut d0 = vec!();
     let mut d1 = vec!();
@@ -349,6 +354,9 @@ fn parse_replay(replay: &std::path::PathBuf) {
                     }*/
                 }
             }
+            Packet { clock, payload: PacketType::Banner(p), .. } => {
+                println!("{}: Got banner {:?}", clock, p);
+            }
             Packet { clock, payload: PacketType::Chat(p), .. } => {
                 println!("{}: Got chat packet: audience='{}' message='{}' ({:?})", clock, p.audience, p.message, p);
             }
@@ -375,6 +383,9 @@ fn parse_replay(replay: &std::path::PathBuf) {
             Packet { clock, packet_type, payload: PacketType::ArtilleryHit(p), .. } => {
                 println!("{}: Got artillery packet damage={} subject=0x{:x}", clock, p.damage, p.subject);
                 //println!("{:#?}", p);
+            }
+            Packet { clock, payload: PacketType::DamageReceived(payload), .. } => {
+                println!("{}: Damage received: {:x?}", clock, payload);
             }
             Packet { clock, packet_type, payload: PacketType::Unknown(payload), .. } => {
                 //_ => {
@@ -535,6 +546,9 @@ fn parse_replay(replay: &std::path::PathBuf) {
                 println!("Bitmasks: 0x{:08x} 0x{:08x} 0x{:08x} 0x{:08x} 0x{:08x} 0x{:08x}\n", p.bitmask0, p.bitmask1, p.bitmask2, p.bitmask3, p.bitmask4, p.bitmask5);
                 //println!("{:#?}", p);
             }
+            Packet { clock, payload: PacketType::Banner(p), .. } => {
+                println!("{}: Got banner {:?}", clock, p);
+            }
             Packet { clock, payload: PacketType::Entity(p), .. } => {
                 if p.supertype == 0x8 {
                     if !packet_counts.contains_key(&p.subtype) {
@@ -552,7 +566,7 @@ fn parse_replay(replay: &std::path::PathBuf) {
                     }
                     if p.subtype == 0x35 {
                         println!("{}: Got 0x8 0x35 packet!", clock);
-                        let (_, v) = parse_8_35(p.payload).unwrap();
+                        //let (_, v) = parse_8_35(p.payload).unwrap();
                         /*let (i, cnt) = be_u8::<_, error::Error<&[u8]>>(p.payload).unwrap();
                         /*let parser = |i: &[u8]| -> IResult<&[u8], (u32, f32)> {
                             let (i, pid) = le_u32(i)?;
@@ -569,7 +583,7 @@ fn parse_replay(replay: &std::path::PathBuf) {
                             i = new_i;
                         }
                         assert!(i.len() == 0);*/
-                        println!("{}: Data: 0x{:x} -> {:x?}", clock, p.entity_id, v);
+                        //println!("{}: Data: 0x{:x} -> {:x?}", clock, p.entity_id, v);
                         //hexdump::hexdump(p.payload);
                     }
                 }
@@ -603,7 +617,8 @@ fn parse_replay(replay: &std::path::PathBuf) {
 }
 
 fn main() {
-    parse_replay(&std::path::PathBuf::from("replays/20200605_183626_PASB008-Colorado-1945_13_OC_new_dawn.wowsreplay"));
+    //parse_replay(&std::path::PathBuf::from("replays/20200605_183626_PASB008-Colorado-1945_13_OC_new_dawn.wowsreplay"));
+    parse_replay(&std::path::PathBuf::from("replays/20200703_194438_PASB008-Colorado-1945_17_NA_fault_line.wowsreplay"));
     //parse_replay(&std::path::PathBuf::from("replays/20200620_155225_PRSD205-Podvoisky-pr-1929_17_NA_fault_line.wowsreplay"));
     //parse_replay("replays/20200605_185913_PRSB106-Izmail_08_NE_passage.wowsreplay");
     //parse_replay(&std::path::PathBuf::from("replays/20200605_112630_PASC207-Helena_10_NE_big_race.wowsreplay"));
