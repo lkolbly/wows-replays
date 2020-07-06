@@ -66,18 +66,25 @@ pub struct Type24Packet {
     pub f13: f32,
 }
 
-/// This appears to be camera position.
-/// PID (or maybe sub_object_id?) appears to be what the camera is attached to.
-/// Then there is a follow-up packet (of this type) which describes the
-/// (relative?) position
+/// Note that this packet frequently appears twice - it appears that it
+/// describes both the player's boat location/orientation as well as the
+/// camera orientation. When the camera is attached to an object, the ID of
+/// that object will be given in the parent_id field.
 #[derive(Debug)]
-pub struct Type2bPacket {
+pub struct PlayerOrientationPacket {
     pub pid: u32,
-    pub sub_object_id: u32,
-    pub f0: f32, // Appears to be a coordinate - X or Z
-    pub f1: f32, // Unknown? (possibly Y?)
-    pub f2: f32, // Appears to be a coordinate - X or Z
-    pub f3: f32, // Appears to be a rotation of some sort? (wraps at pi)
+    pub parent_id: u32,
+    pub x: f32,
+
+    /// I'm not 100% sure about this field
+    pub y: f32,
+
+    pub z: f32,
+
+    /// Radians, 0 is North and positive numbers are clockwise
+    /// e.g. pi/2 is due East, -pi/2 is due West, and +/-pi is due South.
+    pub bearing: f32,
+
     pub f4: f32,
     pub f5: f32,
 }
@@ -99,7 +106,7 @@ pub struct ArtilleryHitPacket<'a> {
     pub raw: &'a [u8],
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum Banner {
     PlaneShotDown,
     Incapacitation,
@@ -129,7 +136,7 @@ pub enum PacketType<'a> {
     Banner(Banner),
     DamageReceived(DamageReceivedPacket),
     Type24(Type24Packet),
-    Type2b(Type2bPacket),
+    PlayerOrientation(PlayerOrientationPacket),
     Type8_79(Vec<(u32, u32)>),
     Unknown(&'a [u8]),
 }
@@ -143,20 +150,20 @@ pub struct Packet<'a> {
     pub raw: &'a [u8],
 }
 
-fn parse_type_2b_packet(i: &[u8]) -> IResult<&[u8], PacketType> {
+fn parse_player_orientation_packet(i: &[u8]) -> IResult<&[u8], PacketType> {
     assert!(i.len() == 0x20);
     let (i, pid) = le_u32(i)?;
-    let (i, sub_object_id) = le_u32(i)?;
-    let (i, f0) = le_f32(i)?;
-    let (i, f1) = le_f32(i)?;
-    let (i, f2) = le_f32(i)?;
-    let (i, f3) = le_f32(i)?;
+    let (i, parent_id) = le_u32(i)?;
+    let (i, x) = le_f32(i)?;
+    let (i, y) = le_f32(i)?;
+    let (i, z) = le_f32(i)?;
+    let (i, bearing) = le_f32(i)?;
     let (i, f4) = le_f32(i)?;
     let (i, f5) = le_f32(i)?;
     Ok((
         i,
-        PacketType::Type2b(Type2bPacket{
-            pid, sub_object_id, f0, f1, f2, f3, f4, f5,
+        PacketType::PlayerOrientation(PlayerOrientationPacket{
+            pid, parent_id, x, y, z, bearing, f4, f5,
         })
     ))
 }
@@ -498,7 +505,7 @@ fn parse_packet(version: u32, i: &[u8]) -> IResult<&[u8], Packet> {
             parse_type_24_packet(i)?
         }*/
         0x2b => {
-            parse_type_2b_packet(i)?
+            parse_player_orientation_packet(i)?
         }
         _ => {
             parse_unknown_packet(i, packet_size)?

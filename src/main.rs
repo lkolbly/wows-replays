@@ -2,7 +2,10 @@ use nom::{bytes::complete::take, bytes::complete::tag, named, do_parse, take, ta
 use std::collections::HashMap;
 use std::convert::TryInto;
 use plotters::prelude::*;
-use image::{imageops::FilterType, ImageFormat};
+use image::{imageops::FilterType, ImageFormat, RgbImage};
+//use image::prelude::*;
+use image::GenericImageView;
+use image::Pixel;
 
 mod error;
 mod wowsreplay;
@@ -246,7 +249,9 @@ fn parse_replay(replay: &std::path::PathBuf) {
     let root = BitMapBackend::new("test.png", (2048, 2048)).into_drawing_area();
     root.fill(&BLACK).unwrap();
 
-    let scale = 700.0; // 570 for 36km maps
+    // 600 for New Dawn (36x36km)
+    // 700 for Fault Line (42x42km)
+    let scale = 600.0;
     let mut scatter_ctx = ChartBuilder::on(&root)
         .x_label_area_size(0)
         .y_label_area_size(0)
@@ -366,13 +371,13 @@ fn parse_replay(replay: &std::path::PathBuf) {
             Packet { clock, payload: PacketType::Type24(p), .. } => {
                 println!("{:.3}: Got packet 0x24: {:?}", clock, p);
             }
-            Packet { clock, payload: PacketType::Type2b(p), .. } => {
-                println!("{:.3}: Got packet 0x2b: {:x?}", clock, p);
-                if p.sub_object_id == 0 {
-                    d0.push((*clock, p.f0));
-                    d1.push((*clock, p.f1));
-                    d2.push((*clock, p.f2));
-                    d3.push((*clock, p.f3));
+            Packet { clock, payload: PacketType::PlayerOrientation(p), .. } => {
+                println!("{:.3}: Got player orientation packet: {:x?}", clock, p);
+                if p.parent_id == 0 {
+                    d0.push((*clock, p.x));
+                    d1.push((*clock, p.y));
+                    d2.push((*clock, p.z));
+                    d3.push((*clock, p.bearing));
                     d4.push((*clock, p.f4));
                     d5.push((*clock, p.f5));
                 }
@@ -412,7 +417,34 @@ fn parse_replay(replay: &std::path::PathBuf) {
             .y_label_area_size(0)
             .build_ranged(0.0..1.0, 0.0..1.0).unwrap();
 
-        let image = image::load(std::io::BufReader::new(std::fs::File::open("320px-Fault_Line.png").unwrap()), ImageFormat::Png).unwrap().resize_exact(2048, 2048, FilterType::Nearest);
+        let image = image::load(std::io::BufReader::new(std::fs::File::open("res_unpack/spaces/13_OC_new_dawn/minimap_water.png").unwrap()), ImageFormat::Png).unwrap().resize_exact(2048, 2048, FilterType::Nearest);
+        //let image = image::load(std::io::BufReader::new(std::fs::File::open("320px-New_Dawn.png").unwrap()), ImageFormat::Png).unwrap().resize_exact(2048, 2048, FilterType::Nearest);
+        let elem: BitMapElement<_> = ((0.0, 1.0), image).into();
+        ctx.draw_series(std::iter::once(elem)).unwrap();
+    }
+    {
+        //let minimap = image::load(std::io::BufReader::new(std::fs::File::open("res_unpack/spaces/17_NA_fault_line/minimap.png").unwrap()), ImageFormat::Png).unwrap();
+        let minimap = image::load(std::io::BufReader::new(std::fs::File::open("res_unpack/spaces/13_OC_new_dawn/minimap.png").unwrap()), ImageFormat::Png).unwrap();
+        let minimap_background = image::load(std::io::BufReader::new(std::fs::File::open("res_unpack/spaces/13_OC_new_dawn/minimap_water.png").unwrap()), ImageFormat::Png).unwrap();
+
+        let mut image = RgbImage::new(760, 760);
+        for x in 0..760 {
+            for y in 0..760 {
+                let bg = minimap_background.get_pixel(x, y);
+                let fg = minimap.get_pixel(x, y);
+                let mut bg = bg.clone();
+                bg.blend(&fg);
+                image.put_pixel(x, y, bg.to_rgb());
+            }
+        }
+        let image = image::DynamicImage::ImageRgb8(image);
+        let image = image.resize_exact(2048, 2048, FilterType::Lanczos3);
+
+        let mut ctx = ChartBuilder::on(&root)
+            .x_label_area_size(0)
+            .y_label_area_size(0)
+            .build_ranged(0.0..1.0, 0.0..1.0).unwrap();
+
         //let image = image::load(std::io::BufReader::new(std::fs::File::open("320px-New_Dawn.png").unwrap()), ImageFormat::Png).unwrap().resize_exact(2048, 2048, FilterType::Nearest);
         let elem: BitMapElement<_> = ((0.0, 1.0), image).into();
         ctx.draw_series(std::iter::once(elem)).unwrap();
@@ -465,9 +497,9 @@ fn parse_replay(replay: &std::path::PathBuf) {
         root.fill(&WHITE).unwrap();
         let root = root.margin(10, 10, 10, 10);
         // After this point, we should be able to draw construct a chart context
-        let max_x = *d5.iter().map(|(a,_b)| { a }).max_by(|a, b| { a.partial_cmp(b).unwrap() }).unwrap();
-        let min_y = *d5.iter().map(|(_a,b)| { b }).min_by(|a, b| { a.partial_cmp(b).unwrap() }).unwrap();
-        let max_y = *d5.iter().map(|(_a,b)| { b }).max_by(|a, b| { a.partial_cmp(b).unwrap() }).unwrap();
+        let max_x = *d3.iter().map(|(a,_b)| { a }).max_by(|a, b| { a.partial_cmp(b).unwrap() }).unwrap();
+        let min_y = *d3.iter().map(|(_a,b)| { b }).min_by(|a, b| { a.partial_cmp(b).unwrap() }).unwrap();
+        let max_y = *d3.iter().map(|(_a,b)| { b }).max_by(|a, b| { a.partial_cmp(b).unwrap() }).unwrap();
         let mut chart = ChartBuilder::on(&root)
         // Set the caption of the chart
             .caption("This is our first plot", ("sans-serif", 40).into_font())
@@ -490,7 +522,7 @@ fn parse_replay(replay: &std::path::PathBuf) {
             .y_label_formatter(&|x| format!("{:.3}", x))
             .draw().unwrap();
 
-        chart.draw_series(LineSeries::new(
+        /*chart.draw_series(LineSeries::new(
             d0,
             &RED,
         )).unwrap();
@@ -503,7 +535,7 @@ fn parse_replay(replay: &std::path::PathBuf) {
         chart.draw_series(LineSeries::new(
             d2,
             &GREEN,
-        )).unwrap();
+        )).unwrap();*/
 
         chart.draw_series(LineSeries::new(
             d3,
@@ -548,6 +580,10 @@ fn parse_replay(replay: &std::path::PathBuf) {
             }
             Packet { clock, payload: PacketType::Banner(p), .. } => {
                 println!("{}: Got banner {:?}", clock, p);
+                if !banners.contains_key(&p) {
+                    banners.insert(p, 0);
+                }
+                *banners.get_mut(&p).unwrap() += 1;
             }
             Packet { clock, payload: PacketType::Entity(p), .. } => {
                 if p.supertype == 0x8 {
@@ -558,10 +594,10 @@ fn parse_replay(replay: &std::path::PathBuf) {
                     if p.subtype == 0xc {
                         println!("{}: Got 0x8 0x{:x} packet! payload={:?}", clock, p.subtype, p.payload);
                         assert!(p.payload.len() == 1);
-                        if !banners.contains_key(&p.payload[0]) {
+                        /*if !banners.contains_key(&p.payload[0]) {
                             banners.insert(p.payload[0], 0);
                         }
-                        *banners.get_mut(&p.payload[0]).unwrap() += 1;
+                        *banners.get_mut(&p.payload[0]).unwrap() += 1;*/
                         //hexdump::hexdump(p.payload);
                     }
                     if p.subtype == 0x35 {
@@ -600,7 +636,7 @@ fn parse_replay(replay: &std::path::PathBuf) {
     println!("Player did {} damage!", total_damage);
 
     for (k,v) in banners.iter() {
-        println!("Banner {}: {}x", k, v);
+        println!("Banner {:?}: {}x", k, v);
     }
 
     // Some debugging code
@@ -617,8 +653,8 @@ fn parse_replay(replay: &std::path::PathBuf) {
 }
 
 fn main() {
-    //parse_replay(&std::path::PathBuf::from("replays/20200605_183626_PASB008-Colorado-1945_13_OC_new_dawn.wowsreplay"));
-    parse_replay(&std::path::PathBuf::from("replays/20200703_194438_PASB008-Colorado-1945_17_NA_fault_line.wowsreplay"));
+    parse_replay(&std::path::PathBuf::from("replays/20200605_183626_PASB008-Colorado-1945_13_OC_new_dawn.wowsreplay"));
+    //parse_replay(&std::path::PathBuf::from("replays/20200703_194438_PASB008-Colorado-1945_17_NA_fault_line.wowsreplay"));
     //parse_replay(&std::path::PathBuf::from("replays/20200620_155225_PRSD205-Podvoisky-pr-1929_17_NA_fault_line.wowsreplay"));
     //parse_replay("replays/20200605_185913_PRSB106-Izmail_08_NE_passage.wowsreplay");
     //parse_replay(&std::path::PathBuf::from("replays/20200605_112630_PASC207-Helena_10_NE_big_race.wowsreplay"));
