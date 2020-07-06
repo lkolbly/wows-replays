@@ -7,13 +7,15 @@ use image::{imageops::FilterType, ImageFormat, RgbImage};
 use image::GenericImageView;
 use image::Pixel;
 
-mod error;
+use wows_replays::{Error, ReplayFile, Packet, PacketType, parse_packets};
+
+/*mod error;
 mod wowsreplay;
 mod packet;
 
 use error::*;
 use wowsreplay::*;
-use packet::*;
+use packet::*;*/
 
 // 0x71xx & 0x72xx are data identifiers for references
 // 0x55 is a length-delimited string (single-byte length)
@@ -27,7 +29,7 @@ use packet::*;
 // 0x7d is... followed by nothing (some sort of framing structure?)
 // 0x80 is... followed by nothing (some sort of framing structure?)
 // 0x88/0x89 are... followed by nothing (boolean true/false?)
-#[derive(Debug)]
+/*#[derive(Debug)]
 enum Type77<'a> {
     DataTag(u32),
     String(&'a str),
@@ -224,7 +226,7 @@ fn parse_8_35(i: &[u8]) -> IResult<&[u8], Vec<(u32, f32)>> {
     let (i, data) = count(parse_8_35_part, cnt.try_into().unwrap())(i)?;
     assert!(i.len() == 0);
     Ok((i, data))
-}
+}*/
 
 // From https://stackoverflow.com/questions/35901547/how-can-i-find-a-subsequence-in-a-u8-slice
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -297,7 +299,7 @@ fn parse_replay(replay: &std::path::PathBuf) {
                     if p.subtype == 0x77 {
                         println!("{}: Got {}-byte 0x8 packet subtype=0x{:x}:", clock, p.payload.len(), p.subtype);
                         //hexdump::hexdump(p.payload);
-                        parse_77(p.payload);
+                        //parse_77(p.payload);
                     } else if p.subtype == 0x76 {
                         println!("{}: Got chat packet!", clock);
                     } else if p.subtype == 0x30 {

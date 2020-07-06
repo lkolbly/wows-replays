@@ -2,4 +2,7 @@
 
 members = [
     "parser",
+    "stats_grabber",
+    "path_tracer",
+    "replayshark",
 ]
