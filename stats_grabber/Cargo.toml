@@ -8,16 +8,3 @@ edition = "2018"
 
 [dependencies]
 wows-replays = { version = "0.1.0", path = "../parser" }
-nom = "6.0.0-alpha1"
-hexdump = "0.1.0"
-flate2 = "1.0.14"
-rust-lzma = "0.5"
-serde = "1.0"
-serde_derive = "1.0"
-serde_json = "1.0"
-thiserror = "1.0.19"
-lzw = "0.10.0"
-rust-crypto = "0.2.36"
-libz-sys = "1.0.25"
-plotters = "0.2.15"
-image = "0.23.4"
