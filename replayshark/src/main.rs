@@ -3,230 +3,11 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use plotters::prelude::*;
 use image::{imageops::FilterType, ImageFormat, RgbImage};
-//use image::prelude::*;
 use image::GenericImageView;
 use image::Pixel;
+use clap::{Arg, App, SubCommand};
 
 use wows_replays::{Error, ReplayFile, Packet, PacketType, parse_packets};
-
-/*mod error;
-mod wowsreplay;
-mod packet;
-
-use error::*;
-use wowsreplay::*;
-use packet::*;*/
-
-// 0x71xx & 0x72xx are data identifiers for references
-// 0x55 is a length-delimited string (single-byte length)
-// 0x68 is a single-byte reference (referencing the above 0x71 & 0x72 tags)
-// 0x49 is a 0xA-delimited string
-// 0x4a is a 4-byte integer
-// 0x4b is... followed by one byte (some sort of framing structure?)
-// 0x5d is... followed by nothing (some sort of framing structure?)
-// 0x28 is... followed by nothing (some sort of framing structure?)
-// 0x86 is... followed by nothing (some sort of framing structure?)
-// 0x7d is... followed by nothing (some sort of framing structure?)
-// 0x80 is... followed by nothing (some sort of framing structure?)
-// 0x88/0x89 are... followed by nothing (boolean true/false?)
-/*#[derive(Debug)]
-enum Type77<'a> {
-    DataTag(u32),
-    String(&'a str),
-    StringPair((&'a str, &'a str)),
-    U32(u32),
-    Unknown((u8, &'a [u8])),
-}
-
-fn parse_77_length_delimited_string(i: &[u8]) -> IResult<&[u8], Type77> {
-    let (i, _) = tag([0x55])(i)?;
-    let (i, l) = be_u8(i)?;
-    let (i, s) = take(l)(i)?;
-    Ok((i, Type77::String(std::str::from_utf8(s).unwrap())))
-}
-
-fn parse_77_length_delimited_string_58(i: &[u8]) -> IResult<&[u8], Type77> {
-    let (i, _) = tag([0x58])(i)?;
-    let (i, l) = le_u32(i)?;
-    let (i, s) = take(l)(i)?;
-    Ok((i, Type77::String(std::str::from_utf8(s).unwrap())))
-}
-
-fn parse_77_newline_delimited_string(i: &[u8]) -> IResult<&[u8], Type77> {
-    let (i, _) = tag([0x49])(i)?;
-    let search: &[u8] = &[0xa];
-    let (i, s) = nom::bytes::complete::take_until(search)(i)?;
-    let (i, _) = tag([0xa])(i)?;
-    Ok((i, Type77::String(std::str::from_utf8(s).unwrap())))
-}
-
-// This is just... two newline delimited strings together?
-fn parse_77_newline_delimited_string_63(i: &[u8]) -> IResult<&[u8], Type77> {
-    let (i, _) = tag([0x63])(i)?;
-    let search: &[u8] = &[0xa];
-    let (i, s) = nom::bytes::complete::take_until(search)(i)?;
-    let (i, _) = tag([0xa])(i)?;
-    let (i, s2) = nom::bytes::complete::take_until(search)(i)?;
-    let (i, _) = tag([0xa])(i)?;
-    Ok((i, Type77::StringPair((
-        std::str::from_utf8(s).unwrap(),
-        std::str::from_utf8(s2).unwrap(),
-    ))))
-}
-
-fn parse_77_int(i: &[u8]) -> IResult<&[u8], Type77> {
-    let (i, _) = tag([0x4a])(i)?;
-    let (i, x) = le_u32(i)?;
-    Ok((i, Type77::U32(x)))
-}
-
-fn parse_77_unknown(tag_value: u8, count: usize) -> Box<dyn Fn(&[u8]) -> IResult<&[u8], Type77>> {
-    Box::new(move |i| {
-        let (i, x) = tag([tag_value])(i)?;
-        let (i, y) = take(count)(i)?;
-        Ok((i, Type77::Unknown((x[0], y))))
-    })
-}
-
-/*fn parse_77_7d(i: &[u8]) -> IResult<&[u8], Type77> {
-    let (i, x) = tag([0x7d])(i)?;
-    Ok((i, Type77::Unknown(x)))
-}*/
-
-fn parse_77_71(i: &[u8]) -> IResult<&[u8], Type77> {
-    let (i, _) = tag([0x71])(i)?;
-    let (i, x) = be_u8(i)?;
-    Ok((i, Type77::DataTag(x as u32)))
-}
-
-fn parse_77_72(i: &[u8]) -> IResult<&[u8], Type77> {
-    let (i, _) = tag([0x72])(i)?;
-    let (i, x) = le_u32(i)?;
-    Ok((i, Type77::DataTag(x)))
-}
-
-/*fn parse_80_02(i: &[u8]) -> IResult<&[u8], Type77> {
-    let (i, x) = tag([0x80, 0x02])(i)?;
-    Ok((i, Type77::Unknown(x)))
-}*/
-
-fn parse_77(i: &[u8]) -> IResult<&[u8], ()> {
-    let orig_len = i.len();
-    let (i, start) = take(10u32)(i)?;
-    /*let (i, v) = many1!(i, alt!(
-        parse_77_71 |
-        parse_77_72
-    ))?;*/
-    let mut v = vec!();
-    let mut i = i;
-    loop {
-        let framing_parser = nom::branch::alt((
-            // Whatever the data-counting-tagging mechanism is
-            parse_77_71,
-            parse_77_72,
-
-            // These are some sort of framing markers, I think
-            parse_77_unknown(0x80, 1), // e.g. 0x80 0x02
-            parse_77_unknown(0x7d, 0),
-            parse_77_unknown(0x28, 0),
-            parse_77_unknown(0x4b, 1), // Second byte seems to count and be nested
-            parse_77_unknown(0x5d, 0),
-            parse_77_unknown(0x65, 0), // Maybe "empty string" or "null"?
-            parse_77_unknown(0x86, 0),
-
-            // This is a single-byte backreference? (reference the data specified by the tag)
-            parse_77_unknown(0x68, 1),
-            parse_77_unknown(0x6a, 4), // 4-byte backreference?
-        ));
-        let datatypes = nom::branch::alt((
-            // These datatypes are pretty well-known
-            parse_77_length_delimited_string,
-            parse_77_length_delimited_string_58,
-            parse_77_newline_delimited_string,
-            parse_77_newline_delimited_string_63,
-            //parse_77_unknown(0x4a, 4), // This is a 4-byte integer
-            parse_77_int,
-        ));
-        let (new_i, x) = match nom::branch::alt((
-            framing_parser,
-            datatypes,
-
-            // These are really super unknown, I'm just parsing enough to get past them
-            parse_77_unknown(0x75, 0), // This is especially confusing - start of string? Start of array? End of array?
-            parse_77_unknown(0x73, 0), // The "s" in "usb"
-            parse_77_unknown(0x62, 0), // The "b" in "usb"
-
-            parse_77_unknown(0x4d, 2),
-            parse_77_unknown(0x4e, 0),
-            parse_77_unknown(0x29, 0),
-            parse_77_unknown(0x2e, 4), // Note: This isn't quite right, it's eating too many symbols at the end of the data
-            parse_77_unknown(0x81, 0),
-            parse_77_unknown(0x88, 0),
-            parse_77_unknown(0x89, 0),
-            parse_77_unknown(0x61, 0),
-            parse_77_unknown(0x26, 3),
-
-            // These appear in similar-looking situations
-            //parse_77_unknown(0x1a, 3),
-            //parse_77_unknown(0x51, 3),
-
-            // Interestingly, these appear in similar-looking situations
-            //parse_77_unknown(0x21, 3),
-            //parse_77_unknown(0x24, 3),
-
-            // This one probably means I screwed up somewhere else
-            //parse_77_unknown(0x00, 0),
-        ))(i) {
-            Ok(x) => { x }
-            Err(_) => { break; }
-        };
-        v.push(x);
-        i = new_i;
-    }
-    let mut indent = 3;
-    for x in v.iter() {
-        let mut indents = String::new();
-        //println!("{}", indent);
-        if indent < 0 {
-            indents.push_str("BAD");
-        }
-        for _ in 0..indent {
-            indents.push_str("  ");
-        }
-        println!("{}{:x?}", indents, x);
-        match x {
-            Type77::Unknown((0x28, _)) => { indent += 1; }
-            Type77::Unknown((0x29, _)) => { indent += 1; }
-            Type77::Unknown((0x61, _)) => { indent += 1; }
-            Type77::Unknown((0x5d, _)) => { indent -= 1; }
-            Type77::Unknown((0x7d, _)) => { indent -= 1; }
-            _ => {}
-        }
-        //if indent < 0 { indent = 0; }
-    }
-    println!("Started with {} bytes", orig_len);
-    println!("Start data: {:x?}", start);
-    println!("Got {} packets, but remaining {} bytes start with:", v.len(), i.len());
-    if i.len() < 160 {
-        hexdump::hexdump(i);
-    } else {
-        hexdump::hexdump(&i[0..10*16]);
-    }
-    Ok((i, ()))
-}
-
-fn parse_8_35_part(i: &[u8]) -> IResult<&[u8], (u32, f32)> {
-    let (i, pid) = le_u32(i)?;
-    let (i, damage) = le_f32(i)?;
-    Ok((i, (pid, damage)))
-}
-
-fn parse_8_35(i: &[u8]) -> IResult<&[u8], Vec<(u32, f32)>> {
-    let (i, cnt) = be_u8(i)?;
-    let (i, data) = count(parse_8_35_part, cnt.try_into().unwrap())(i)?;
-    assert!(i.len() == 0);
-    Ok((i, data))
-}*/
 
 // From https://stackoverflow.com/questions/35901547/how-can-i-find-a-subsequence-in-a-u8-slice
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -287,7 +68,11 @@ fn parse_replay(replay: &std::path::PathBuf) {
             println!("Found needle subpattern!");
             hexdump::hexdump(packet.raw);
         }
+        println!("{:.3}: {:x?}", packet.clock, packet.payload);
         match packet {
+            Packet { clock, payload: PacketType::Setup(p), .. } => {
+                //
+            }
             Packet { clock, payload: PacketType::Position(p), .. } => {
                 if !points.contains_key(&p.pid) {
                     points.insert(p.pid, vec!());
@@ -655,7 +440,23 @@ fn parse_replay(replay: &std::path::PathBuf) {
 }
 
 fn main() {
-    parse_replay(&std::path::PathBuf::from("replays/20200605_183626_PASB008-Colorado-1945_13_OC_new_dawn.wowsreplay"));
+    let matches = App::new("World of Warships Replay Parser Utility")
+        .version("0.1.0")
+        .author("Lane Kolbly <lane@rscheme.org>")
+        .about("Parses & processes World of Warships replay files")
+        .arg(Arg::with_name("REPLAY")
+             .help("The replay file to use")
+             .required(true)
+             .index(1))
+        .get_matches();
+
+    let input = matches.value_of("REPLAY").unwrap();
+
+    parse_replay(&std::path::PathBuf::from(input));
+
+    //parse_replay(&std::path::PathBuf::from("replays/20200605_183626_PASB008-Colorado-1945_13_OC_new_dawn.wowsreplay"));
+    //parse_replay(&std::path::PathBuf::from("replays/20200627_181328_PASC207-Helena_19_OC_prey.wowsreplay"));
+    //parse_replay(&std::path::PathBuf::from("replays/20200626_203851_PGSD103-G-101_05_Ring.wowsreplay"));
     //parse_replay(&std::path::PathBuf::from("replays/20200703_194438_PASB008-Colorado-1945_17_NA_fault_line.wowsreplay"));
     //parse_replay(&std::path::PathBuf::from("replays/20200620_155225_PRSD205-Podvoisky-pr-1929_17_NA_fault_line.wowsreplay"));
     //parse_replay("replays/20200605_185913_PRSB106-Izmail_08_NE_passage.wowsreplay");

@@ -6,6 +6,7 @@ use std::convert::TryInto;
 //mod wowsreplay;
 
 use crate::error::*;
+use crate::parse_77::*;
 //use crate::wowsreplay::*;
 
 #[derive(Debug)]
@@ -136,6 +137,7 @@ pub enum PacketType<'a> {
     Type24(Type24Packet),
     PlayerOrientation(PlayerOrientationPacket),
     Type8_79(Vec<(u32, u32)>),
+    Setup(SetupPacket),
     Unknown(&'a [u8]),
 }
 
@@ -368,6 +370,14 @@ fn parse_damage_received_packet(entity_id: u32, supertype: u32, subtype: u32, i:
     ))
 }
 
+fn parse_setup_packet(entity_id: u32, supertype: u32, subtype: u32, i: &[u8]) -> IResult<&[u8], PacketType> {
+    let (i, packet) = parse_77(i)?;
+    Ok((
+        i,
+        PacketType::Setup(packet)
+    ))
+}
+
 fn parse_unknown_entity_packet(entity_id: u32, supertype: u32, subtype: u32, payload: &[u8]) -> IResult<&[u8], PacketType> {
     Ok((
         &[],
@@ -406,6 +416,7 @@ fn lookup_entity_fn(version: u32, supertype: u32, subtype: u32) -> fn(u32,u32,u3
     let fn_2571457 = || { // 0.9.4
         match (supertype, subtype) {
             (0x8, 0x76) => parse_chat_packet,
+            (0x8, 0x77) => parse_setup_packet,
             (0x8, 0x3c) | (0x8, 0x3d) => parse_timing_packet,
             (0x8, 0x79) => parse_8_79_packet,
             (0x8, 0x63) => parse_artillery_hit_packet,
@@ -417,6 +428,7 @@ fn lookup_entity_fn(version: u32, supertype: u32, subtype: u32) -> fn(u32,u32,u3
     let fn_2643263 = || { // 0.9.5.1
         match (supertype, subtype) {
             (0x8, 0x78) => parse_chat_packet,
+            (0x8, 0x79) => parse_setup_packet,
             (0x8, 0x3e) | (0x8, 0x3f) => parse_timing_packet,
             (0x8, 0x7b) => parse_8_79_packet,
             (0x8, 0x64) => parse_artillery_hit_packet,
@@ -445,6 +457,9 @@ fn parse_entity_packet(version: u32, supertype: u32, i: &[u8]) -> IResult<&[u8],
     let (i, payload_length) = le_u32(i)?;
     let (i, payload) = take(payload_length)(i)?;
     //println!("Parsing {}-byte 0x{:x} 0x{:x} packet", payload_length, supertype, subtype);
+    /*if supertype == 0x8 && subtype == 0x79 {
+        parse_77(payload);
+    }*/
     let (remaining, packet) = lookup_entity_fn(version, supertype, subtype)(entity_id, supertype, subtype, payload)?;
     // TODO: Re-enable this assert
     //assert!(remaining.len() == 0);
