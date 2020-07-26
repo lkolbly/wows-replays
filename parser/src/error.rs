@@ -34,24 +34,31 @@ pub enum ErrorKind {
     #[error("Unsupported replay file version found")]
     UnsupportedReplayVersion(u32),
     #[error("Unable to process packet")]
-    UnableToProcessPacket{
+    UnableToProcessPacket {
         supertype: u32,
         subtype: u32,
         reason: String,
         packet: Vec<u8>,
     },
+    #[error("Unable to process packet")]
+    ParsingFailure(String),
 }
 
 impl nom::error::ParseError<&[u8]> for Error {
     fn from_error_kind(input: &[u8], kind: nom::error::ErrorKind) -> Self {
         Self {
-            kind: ErrorKind::Nom { err: kind, input: input.to_vec() },
-            backtrace: Vec::new()
+            kind: ErrorKind::Nom {
+                err: kind,
+                input: input.to_vec(),
+            },
+            backtrace: Vec::new(),
         }
     }
 
     fn append(input: &[u8], kind: nom::error::ErrorKind, mut other: Self) -> Self {
-        other.backtrace.push(Self::from_error_kind(input, kind).kind);
+        other
+            .backtrace
+            .push(Self::from_error_kind(input, kind).kind);
         other
     }
 }
@@ -59,9 +66,11 @@ impl nom::error::ParseError<&[u8]> for Error {
 impl std::convert::From<nom::Err<Error>> for ErrorKind {
     fn from(x: nom::Err<Error>) -> ErrorKind {
         match x {
-            nom::Err::<Error>::Incomplete(_) => { panic!("We can't handle incomplete replay files"); },
-            nom::Err::<Error>::Error(e) => { e.kind },
-            nom::Err::<Error>::Failure(e) => { e.kind },
+            nom::Err::<Error>::Incomplete(_) => {
+                panic!("We can't handle incomplete replay files");
+            }
+            nom::Err::<Error>::Error(e) => e.kind,
+            nom::Err::<Error>::Failure(e) => e.kind,
         }
     }
 }
@@ -70,7 +79,7 @@ impl std::convert::From<std::str::Utf8Error> for Error {
     fn from(x: std::str::Utf8Error) -> Error {
         Error {
             kind: x.into(),
-            backtrace: vec!(),
+            backtrace: vec![],
         }
     }
 }
@@ -79,7 +88,7 @@ impl std::convert::From<serde_json::Error> for Error {
     fn from(x: serde_json::Error) -> Error {
         Error {
             kind: x.into(),
-            backtrace: vec!(),
+            backtrace: vec![],
         }
     }
 }
@@ -89,6 +98,6 @@ pub type IResult<I, T> = nom::IResult<I, T, Error>;
 pub fn failure_from_kind(kind: ErrorKind) -> nom::Err<Error> {
     nom::Err::Failure(Error {
         kind: kind.into(),
-        backtrace: vec!(),
+        backtrace: vec![],
     })
 }

@@ -1,46 +1,54 @@
-use nom::{bytes::complete::take, bytes::complete::tag, named, do_parse, take, tag, number::complete::be_u16, number::complete::le_u16, number::complete::be_u8, alt, cond, number::complete::be_u24, char, opt, one_of, take_while, length_data, many1, complete, number::complete::le_u32, number::complete::le_f32, multi::many0, number::complete::be_u32, multi::count};
-use std::collections::HashMap;
-use std::convert::TryInto;
-use plotters::prelude::*;
-use image::{imageops::FilterType, ImageFormat, RgbImage};
+use clap::{App, Arg, SubCommand};
 use image::GenericImageView;
 use image::Pixel;
-use clap::{Arg, App, SubCommand};
+use image::{imageops::FilterType, ImageFormat, RgbImage};
+use plotters::prelude::*;
+use std::collections::HashMap;
+use std::convert::TryInto;
 
-use wows_replays::{ReplayMeta, Banner, Error, ReplayFile, Packet, PacketType, parse_packets};
+use wows_replays::{parse_packets, Banner, ErrorKind, Packet, PacketType, ReplayFile, ReplayMeta};
 
 fn extract_banners(packets: &[Packet]) -> HashMap<Banner, usize> {
-    packets.iter().filter_map(|packet| match packet.payload {
-        PacketType::Banner(p) => Some(p),
-        _ => None,
-    }).fold(HashMap::new(), |mut acc, banner| {
-        if !acc.contains_key(&banner) {
-            acc.insert(banner, 0);
-        }
-        *acc.get_mut(&banner).unwrap() += 1;
-        acc
-    })
+    packets
+        .iter()
+        .filter_map(|packet| match packet.payload {
+            PacketType::Banner(p) => Some(p),
+            _ => None,
+        })
+        .fold(HashMap::new(), |mut acc, banner| {
+            if !acc.contains_key(&banner) {
+                acc.insert(banner, 0);
+            }
+            *acc.get_mut(&banner).unwrap() += 1;
+            acc
+        })
 }
 
 fn render_trails(meta: &ReplayMeta, packets: &[Packet]) {
-    let trails = packets.iter().filter_map(|packet| match &packet.payload {
-        PacketType::Position(p) => Some(p),
-        _ => None,
-    }).fold(HashMap::new(), |mut acc, p| {
-        if !acc.contains_key(&p.pid) {
-            acc.insert(p.pid, vec!());
-        }
-        acc.get_mut(&p.pid).unwrap().push((p.x as f64, p.z as f64));
-        acc
-    });
+    let trails = packets
+        .iter()
+        .filter_map(|packet| match &packet.payload {
+            PacketType::Position(p) => Some(p),
+            _ => None,
+        })
+        .fold(HashMap::new(), |mut acc, p| {
+            if !acc.contains_key(&p.pid) {
+                acc.insert(p.pid, vec![]);
+            }
+            acc.get_mut(&p.pid).unwrap().push((p.x as f64, p.z as f64));
+            acc
+        });
 
-    let player_trail = packets.iter().filter_map(|packet| match &packet.payload {
-        PacketType::PlayerOrientation(p) => Some(p),
-        _ => None,
-    }).fold(vec!(), |mut acc, p| {
-        acc.push((p.x as f64, p.z as f64));
-        acc
-    });
+    let player_trail = packets
+        .iter()
+        .filter_map(|packet| match &packet.payload {
+            PacketType::PlayerOrientation(p) => Some(p),
+            _ => None,
+        })
+        .fold(vec![], |mut acc, p| {
+            acc.push((p.x as f64, p.z as f64));
+            acc
+        });
 
     // Setup the render context
     let root = BitMapBackend::new("test.png", (2048, 2048)).into_drawing_area();
@@ -48,8 +56,21 @@ fn render_trails(meta: &ReplayMeta, packets: &[Packet]) {
 
     // Blit the background into the image
     {
-        let minimap = image::load(std::io::BufReader::new(std::fs::File::open(&format!("res_unpack/{}/minimap.png", meta.mapName)).unwrap()), ImageFormat::Png).unwrap();
-        let minimap_background = image::load(std::io::BufReader::new(std::fs::File::open(&format!("res_unpack/{}/minimap_water.png", meta.mapName)).unwrap()), ImageFormat::Png).unwrap();
+        let minimap = image::load(
+            std::io::BufReader::new(
+                std::fs::File::open(&format!("res_unpack/{}/minimap.png", meta.mapName)).unwrap(),
+            ),
+            ImageFormat::Png,
+        )
+        .unwrap();
+        let minimap_background = image::load(
+            std::io::BufReader::new(
+                std::fs::File::open(&format!("res_unpack/{}/minimap_water.png", meta.mapName))
+                    .unwrap(),
+            ),
+            ImageFormat::Png,
+        )
+        .unwrap();
 
         let mut image = RgbImage::new(760, 760);
         for x in 0..760 {
@@ -67,7 +88,8 @@ fn render_trails(meta: &ReplayMeta, packets: &[Packet]) {
         let mut ctx = ChartBuilder::on(&root)
             .x_label_area_size(0)
             .y_label_area_size(0)
-            .build_ranged(0.0..1.0, 0.0..1.0).unwrap();
+            .build_ranged(0.0..1.0, 0.0..1.0)
+            .unwrap();
 
         //let image = image::load(std::io::BufReader::new(std::fs::File::open("320px-New_Dawn.png").unwrap()), ImageFormat::Png).unwrap().resize_exact(2048, 2048, FilterType::Nearest);
         let elem: BitMapElement<_> = ((0.0, 1.0), image).into();
@@ -82,34 +104,37 @@ fn render_trails(meta: &ReplayMeta, packets: &[Packet]) {
     let mut scatter_ctx = ChartBuilder::on(&root)
         .x_label_area_size(0)
         .y_label_area_size(0)
-        .build_ranged(-scale..scale, -scale..scale).unwrap();
+        .build_ranged(-scale..scale, -scale..scale)
+        .unwrap();
 
-    let colors = [
-        BLUE,
-        CYAN,
-        GREEN,
-        MAGENTA,
-        RED,
-        WHITE,
-        YELLOW,
-    ];
+    let colors = [BLUE, CYAN, GREEN, MAGENTA, RED, WHITE, YELLOW];
     println!("Have {} tracks", trails.len());
     let mut min_x = 0.;
     let mut max_x = 0.;
-    for (i,(_k,v)) in trails.iter().enumerate() {
+    for (i, (_k, v)) in trails.iter().enumerate() {
         //println!("{}", v.len());
-        let series_minx = v.iter().map(|(x, _y)| x).min_by(|a, b| { a.partial_cmp(b).unwrap() }).unwrap();
-        let series_maxx = v.iter().map(|(x, _y)| x).max_by(|a, b| { a.partial_cmp(b).unwrap() }).unwrap();
+        let series_minx = v
+            .iter()
+            .map(|(x, _y)| x)
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
+        let series_maxx = v
+            .iter()
+            .map(|(x, _y)| x)
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
         if *series_minx < min_x {
             min_x = *series_minx;
         }
         if *series_maxx > max_x {
             max_x = *series_maxx;
         }
-        scatter_ctx.draw_series(
-            v.iter()
-                .map(|(x, y)| Circle::new((*x, *y), 1, colors[i % colors.len()].filled())),
-        ).unwrap();
+        scatter_ctx
+            .draw_series(
+                v.iter()
+                    .map(|(x, y)| Circle::new((*x, *y), 1, colors[i % colors.len()].filled())),
+            )
+            .unwrap();
     }
     println!("Min X: {} max X: {}", min_x, max_x);
 
@@ -119,17 +144,24 @@ fn render_trails(meta: &ReplayMeta, packets: &[Packet]) {
         for idx in 0..d0.len() {
             v.push((d0[idx].1 as f64, d2[idx].1 as f64));
         }*/
-        scatter_ctx.draw_series(
-            player_trail.iter()
-                .map(|(x, y)| Circle::new((*x, *y), 2, WHITE.filled())),
-        ).unwrap();
+        scatter_ctx
+            .draw_series(
+                player_trail
+                    .iter()
+                    .map(|(x, y)| Circle::new((*x, *y), 2, WHITE.filled())),
+            )
+            .unwrap();
     }
 }
 
 fn print_chatlog(packets: &[Packet]) {
     for packet in packets.iter() {
         match packet {
-            Packet { clock, payload: PacketType::Chat(p), .. } => {
+            Packet {
+                clock,
+                payload: PacketType::Chat(p),
+                ..
+            } => {
                 println!("{}: {:?}", clock, p);
             }
             _ => {}
@@ -139,20 +171,31 @@ fn print_chatlog(packets: &[Packet]) {
 
 fn print_summary(packets: &[Packet]) {
     let banners = extract_banners(packets);
-    for (k,v) in banners.iter() {
+    for (k, v) in banners.iter() {
         println!("Banner {:?}: {}x", k, v);
     }
 
-    let mut damage_dealt = packets.iter().filter_map(|packet| match &packet.payload {
-        PacketType::ArtilleryHit(p) => { if !p.is_incoming { Some(p.damage) } else { None }},
-        _ => None,
-    }).fold(0, |acc, x| { acc + x });
+    let damage_dealt = packets
+        .iter()
+        .filter_map(|packet| match &packet.payload {
+            PacketType::ArtilleryHit(p) => {
+                if !p.is_incoming {
+                    Some(p.damage)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        })
+        .fold(0, |acc, x| acc + x);
     println!("Player dealt {} damage", damage_dealt);
 }
 
 // From https://stackoverflow.com/questions/35901547/how-can-i-find-a-subsequence-in-a-u8-slice
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack.windows(needle.len()).position(|window| window == needle)
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
 }
 
 fn find_float_approx(haystack: &[u8], needle: f32, epsilon: f32) -> Option<usize> {
@@ -162,7 +205,10 @@ fn find_float_approx(haystack: &[u8], needle: f32, epsilon: f32) -> Option<usize
     })
 }
 
-fn parse_replay<F: Fn(u32, &ReplayMeta, &[Packet])>(replay: &std::path::PathBuf, cb: F) -> Result<(), wows_replays::ErrorKind> {
+fn parse_replay<F: Fn(u32, &ReplayMeta, &[Packet])>(
+    replay: &std::path::PathBuf,
+    cb: F,
+) -> Result<(), wows_replays::ErrorKind> {
     let replay_file = ReplayFile::from_file(replay);
 
     let version_parts: Vec<_> = replay_file.meta.clientVersionFromExe.split(",").collect();
@@ -186,35 +232,52 @@ fn main() {
         .version("0.1.0")
         .author("Lane Kolbly <lane@rscheme.org>")
         .about("Parses & processes World of Warships replay files")
-        .subcommand(SubCommand::with_name("trace")
-                    .about("Renders an image showing the trails of ships over the course of the game")
-                    .arg(replay_arg.clone()))
-        .subcommand(SubCommand::with_name("survey")
-                    .about("Runs the parser against a directory of replays to validate the parser")
-                    .arg(Arg::with_name("REPLAYS")
-                         .help("The replay files to use")
-                         .required(true)
-                         .multiple(true)))
-        .subcommand(SubCommand::with_name("chat")
-                    .about("Print the chat log of the given game")
-                    .arg(replay_arg.clone()))
-        .subcommand(SubCommand::with_name("summary")
-                    .about("Generate summary statistics of the game")
-                    .arg(replay_arg.clone()))
-        .subcommand(SubCommand::with_name("dump")
-                    .about("Dump the packets to console")
-                    .arg(replay_arg.clone()))
+        .subcommand(
+            SubCommand::with_name("trace")
+                .about("Renders an image showing the trails of ships over the course of the game")
+                .arg(replay_arg.clone()),
+        )
+        .subcommand(
+            SubCommand::with_name("survey")
+                .about("Runs the parser against a directory of replays to validate the parser")
+                .arg(
+                    Arg::with_name("REPLAYS")
+                        .help("The replay files to use")
+                        .required(true)
+                        .multiple(true),
+                ),
+        )
+        .subcommand(
+            SubCommand::with_name("chat")
+                .about("Print the chat log of the given game")
+                .arg(replay_arg.clone()),
+        )
+        .subcommand(
+            SubCommand::with_name("summary")
+                .about("Generate summary statistics of the game")
+                .arg(replay_arg.clone()),
+        )
+        .subcommand(
+            SubCommand::with_name("dump")
+                .about("Dump the packets to console")
+                .arg(replay_arg.clone()),
+        )
         .get_matches();
 
     if let Some(matches) = matches.subcommand_matches("dump") {
         let input = matches.value_of("REPLAY").unwrap();
         parse_replay(&std::path::PathBuf::from(input), |_, meta, packets| {
-            println!("{}", serde_json::to_string(&meta).expect("Couldn't JSON-format metadata"));
+            println!(
+                "{}",
+                serde_json::to_string(&meta).expect("Couldn't JSON-format metadata")
+            );
             for packet in packets {
-                let s = serde_json::to_string(&packet).expect("Couldn't JSON-format serialize packet");
+                let s =
+                    serde_json::to_string(&packet).expect("Couldn't JSON-format serialize packet");
                 println!("{}", s);
             }
-        }).unwrap();
+        })
+        .unwrap();
     }
     if let Some(matches) = matches.subcommand_matches("summary") {
         let input = matches.value_of("REPLAY").unwrap();
@@ -226,30 +289,62 @@ fn main() {
             println!("Game mode: {} {}", meta.name, meta.gameLogic);
             println!();
             print_summary(packets);
-        }).unwrap();
+        })
+        .unwrap();
     }
     if let Some(matches) = matches.subcommand_matches("chat") {
         let input = matches.value_of("REPLAY").unwrap();
         parse_replay(&std::path::PathBuf::from(input), |_, _, packets| {
             print_chatlog(packets);
-        }).unwrap();
+        })
+        .unwrap();
     }
     if let Some(matches) = matches.subcommand_matches("trace") {
         let input = matches.value_of("REPLAY").unwrap();
         parse_replay(&std::path::PathBuf::from(input), |_, meta, packets| {
             render_trails(meta, packets);
-        }).unwrap();
+        })
+        .unwrap();
     }
     if let Some(matches) = matches.subcommand_matches("survey") {
+        let mut version_failures = 0;
+        let mut other_failures = 0;
+        let mut successes = 0;
+        let mut total = 0;
         for replay in matches.values_of("REPLAYS").unwrap() {
-            match parse_replay(&std::path::PathBuf::from(replay), |_, _, packets| {
+            total += 1;
+            match parse_replay(&std::path::PathBuf::from(replay), |_, _, _| {
                 println!("Successfully parsed {}", replay);
             }) {
-                Ok(_) => {}
+                Ok(_) => {
+                    successes += 1;
+                }
+                Err(ErrorKind::UnsupportedReplayVersion(n)) => {
+                    version_failures += 1;
+                    println!("Unsupported version {}", n);
+                }
                 Err(e) => {
+                    other_failures += 1;
                     println!("Error parsing {}: {:?}", replay, e);
                 }
             };
         }
+        println!();
+        println!("Found {} replay files", total);
+        println!(
+            "- {} ({:.0}%) were parsed",
+            successes,
+            100. * successes as f64 / total as f64
+        );
+        println!(
+            "- {} ({:.0}%) are an unrecognized version",
+            version_failures,
+            100. * version_failures as f64 / total as f64
+        );
+        println!(
+            "- {} ({:.0}%) had parse errors",
+            other_failures,
+            100. * other_failures as f64 / total as f64
+        );
     }
 }

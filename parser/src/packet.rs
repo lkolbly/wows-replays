@@ -1,19 +1,16 @@
-use nom::{bytes::complete::take, bytes::complete::tag, named, do_parse, take, tag, number::complete::be_u16, number::complete::le_u16, number::complete::be_u8, alt, cond, number::complete::be_u24, char, opt, one_of, take_while, length_data, many1, complete, number::complete::le_u32, number::complete::le_f32, multi::many0, number::complete::be_u32, multi::count};
-use std::collections::HashMap;
-use std::convert::TryInto;
+use nom::{
+    bytes::complete::take, multi::count, number::complete::be_u32, number::complete::be_u8,
+    number::complete::le_f32, number::complete::le_u32,
+};
 use serde_derive::Serialize;
-
-//mod error;
-//mod wowsreplay;
+use std::convert::TryInto;
 
 use crate::error::*;
 use crate::parse_77::*;
-//use crate::wowsreplay::*;
 
 #[derive(Debug, Serialize)]
 pub struct PositionPacket {
     pub pid: u32,
-    //clock: f32,
     pub x: f32,
     pub y: f32,
     pub z: f32,
@@ -24,7 +21,6 @@ pub struct PositionPacket {
     pub b: f32,
     pub c: f32,
     pub extra: u8,
-    //raw: &'a [u8],
 }
 
 #[derive(Debug, Serialize)]
@@ -163,9 +159,16 @@ fn parse_player_orientation_packet(i: &[u8]) -> IResult<&[u8], PacketType> {
     let (i, f5) = le_f32(i)?;
     Ok((
         i,
-        PacketType::PlayerOrientation(PlayerOrientationPacket{
-            pid, parent_id, x, y, z, bearing, f4, f5,
-        })
+        PacketType::PlayerOrientation(PlayerOrientationPacket {
+            pid,
+            parent_id,
+            x,
+            y,
+            z,
+            bearing,
+            f4,
+            f5,
+        }),
     ))
 }
 
@@ -188,29 +191,59 @@ fn parse_type_24_packet(i: &[u8]) -> IResult<&[u8], PacketType> {
     let (i, f13) = le_f32(i)?;
     Ok((
         i,
-        PacketType::Type24(Type24Packet{
-            f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13,
-        })
+        PacketType::Type24(Type24Packet {
+            f0,
+            f1,
+            f2,
+            f3,
+            f4,
+            f5,
+            f6,
+            f7,
+            f8,
+            f9,
+            f10,
+            f11,
+            f12,
+            f13,
+        }),
     ))
 }
 
 /// Note! There are actually two types of timing packets, which always seem to
 /// mirror each other. ID N is immediately followed by ID N+1 w/ matching
 /// counter. The counter seems to increment ~ once per ms
-fn parse_timing_packet(entity_id: u32, supertype: u32, subtype: u32, i: &[u8]) -> IResult<&[u8], PacketType> {
+fn parse_timing_packet(
+    _entity_id: u32,
+    supertype: u32,
+    subtype: u32,
+    i: &[u8],
+) -> IResult<&[u8], PacketType> {
+    let raw = i;
     let (i, time) = le_u32(i)?;
     let (i, zero) = le_u32(i)?;
     // TODO: Re-enable
     //assert!(zero == 0); // What does this field mean?
-    Ok((
-        i,
-        PacketType::Timing(TimingPacket{
-            time,
-        })
-    ))
+    if zero != 0 {
+        return Err(failure_from_kind(ErrorKind::UnableToProcessPacket {
+            supertype,
+            subtype,
+            reason: format!(
+                "Expected second integer to be zero in timing packet, was {}",
+                zero
+            ),
+            packet: raw.to_vec(),
+        }));
+    }
+    Ok((i, PacketType::Timing(TimingPacket { time })))
 }
 
-fn parse_chat_packet(entity_id: u32, supertype: u32, subtype: u32, i: &[u8]) -> IResult<&[u8], PacketType> {
+fn parse_chat_packet(
+    entity_id: u32,
+    _supertype: u32,
+    _subtype: u32,
+    i: &[u8],
+) -> IResult<&[u8], PacketType> {
     let (i, sender) = le_u32(i)?;
     let (i, audience_len) = be_u8(i)?;
     let (i, audience) = take(audience_len)(i)?;
@@ -218,25 +251,27 @@ fn parse_chat_packet(entity_id: u32, supertype: u32, subtype: u32, i: &[u8]) -> 
     let (i, message) = take(message_len)(i)?;
     Ok((
         i,
-        PacketType::Chat(ChatPacket{
+        PacketType::Chat(ChatPacket {
             entity_id: entity_id,
             sender_id: sender,
             audience: std::str::from_utf8(audience).unwrap(),
             message: std::str::from_utf8(message).unwrap(),
-        })
+        }),
     ))
 }
 
 fn parse_8_79_subobject(i: &[u8]) -> IResult<&[u8], (u32, u32)> {
     let (i, pid) = le_u32(i)?;
     let (i, data) = le_u32(i)?;
-    Ok((
-        i,
-        (pid, data),
-    ))
+    Ok((i, (pid, data)))
 }
 
-fn parse_8_79_packet(entity_id: u32, supertype: u32, subtype: u32, i: &[u8]) -> IResult<&[u8], PacketType> {
+fn parse_8_79_packet(
+    _entity_id: u32,
+    _supertype: u32,
+    _subtype: u32,
+    i: &[u8],
+) -> IResult<&[u8], PacketType> {
     //hexdump::hexdump(i);
     let (i, num_objects) = be_u8(i)?;
     //println!("Found {} objects", num_objects);
@@ -244,13 +279,15 @@ fn parse_8_79_packet(entity_id: u32, supertype: u32, subtype: u32, i: &[u8]) -> 
     let (i, b) = be_u8(i)?;
     assert!(b == 0); // What does this field do?
     assert!(i.len() == 0);
-    Ok((
-        i,
-        PacketType::Type8_79(objects),
-    ))
+    Ok((i, PacketType::Type8_79(objects)))
 }
 
-fn parse_artillery_hit_packet(entity_id: u32, supertype: u32, subtype: u32, i: &[u8]) -> IResult<&[u8], PacketType> {
+fn parse_artillery_hit_packet(
+    _entity_id: u32,
+    supertype: u32,
+    subtype: u32,
+    i: &[u8],
+) -> IResult<&[u8], PacketType> {
     let raw = i;
     let (i, bitmask0) = le_u32(i)?;
     let (i, bitmask1) = le_u32(i)?;
@@ -274,20 +311,26 @@ fn parse_artillery_hit_packet(entity_id: u32, supertype: u32, subtype: u32, i: &
         }
     };*/
     let is_secondary = match (bitmask5 & 0xFF000000) >> 24 {
-        0 => { false },
-        0xff => { true },
+        0 => false,
+        0xff => true,
         _ => {
-            return Err(failure_from_kind(ErrorKind::UnableToProcessPacket{
-                supertype, subtype, reason: format!("Got unknown value 0x{:x} for secondary bitfield in artillery packet", bitmask5), packet: raw.to_vec(),
+            return Err(failure_from_kind(ErrorKind::UnableToProcessPacket {
+                supertype,
+                subtype,
+                reason: format!(
+                    "Got unknown value 0x{:x} for secondary bitfield in artillery packet",
+                    bitmask5
+                ),
+                packet: raw.to_vec(),
             }));
         }
     };
-    let is_he = false;//(bitmask0 & (1 << 22)) != 0;
+    let is_he = false; //(bitmask0 & (1 << 22)) != 0;
     let is_incoming = (bitmask1 & (1 << 0)) != 0;
     assert!(i.len() == 0);
     Ok((
         i,
-        PacketType::ArtilleryHit(ArtilleryHitPacket{
+        PacketType::ArtilleryHit(ArtilleryHitPacket {
             subject,
             is_incoming,
             is_he,
@@ -301,11 +344,17 @@ fn parse_artillery_hit_packet(entity_id: u32, supertype: u32, subtype: u32, i: &
             bitmask4,
             bitmask5,
             raw,
-        })
+        }),
     ))
 }
 
-fn parse_banner_packet(entity_id: u32, supertype: u32, subtype: u32, i: &[u8]) -> IResult<&[u8], PacketType> {
+fn parse_banner_packet(
+    _entity_id: u32,
+    supertype: u32,
+    subtype: u32,
+    i: &[u8],
+) -> IResult<&[u8], PacketType> {
+    let raw = i;
     let (i, banner) = be_u8(i)?;
     let banner = match banner {
         3 => Banner::PlaneShotDown,
@@ -319,15 +368,15 @@ fn parse_banner_packet(entity_id: u32, supertype: u32, subtype: u32, i: &[u8]) -
         17 => Banner::Ricochet,
         28 => Banner::TorpedoProtectionHit,
         _ => {
-            // TODO: Put the panic back
-            //panic!("Got unknown banner type {}!", banner);
-            Banner::Ricochet
+            return Err(failure_from_kind(ErrorKind::UnableToProcessPacket {
+                supertype,
+                subtype,
+                reason: format!("Got unknown banner type 0x{:x}", banner),
+                packet: raw.to_vec(),
+            }));
         }
     };
-    Ok((
-        i,
-        PacketType::Banner(banner),
-    ))
+    Ok((i, PacketType::Banner(banner)))
 }
 
 fn parse_damage_received_part(i: &[u8]) -> IResult<&[u8], (u32, f32)> {
@@ -336,7 +385,12 @@ fn parse_damage_received_part(i: &[u8]) -> IResult<&[u8], (u32, f32)> {
     Ok((i, (pid, damage)))
 }
 
-fn parse_damage_received_packet(entity_id: u32, supertype: u32, subtype: u32, i: &[u8]) -> IResult<&[u8], PacketType> {
+fn parse_damage_received_packet(
+    entity_id: u32,
+    supertype: u32,
+    subtype: u32,
+    i: &[u8],
+) -> IResult<&[u8], PacketType> {
     let (i, cnt) = be_u8(i)?;
     if cnt == 0 {
         // TODO: It's not clear what's actually happening here
@@ -345,10 +399,13 @@ fn parse_damage_received_packet(entity_id: u32, supertype: u32, subtype: u32, i:
         assert!(i.len() == 5);
         return Ok((
             &[],
-            PacketType::Entity(EntityPacket{
-                supertype, entity_id, subtype, payload: i,
-            })
-        ))
+            PacketType::Entity(EntityPacket {
+                supertype,
+                entity_id,
+                subtype,
+                payload: i,
+            }),
+        ));
     }
     if i.len() != 8 * cnt as usize {
         println!("Unclear damage recv'd packet: cnt={}", cnt);
@@ -356,43 +413,58 @@ fn parse_damage_received_packet(entity_id: u32, supertype: u32, subtype: u32, i:
         //panic!();
         return Ok((
             &[],
-            PacketType::Entity(EntityPacket{
-                supertype, entity_id, subtype, payload: i,
-            })
-        ))
+            PacketType::Entity(EntityPacket {
+                supertype,
+                entity_id,
+                subtype,
+                payload: i,
+            }),
+        ));
     }
     let (i, data) = count(parse_damage_received_part, cnt.try_into().unwrap())(i)?;
     assert!(i.len() == 0);
     Ok((
         i,
-        PacketType::DamageReceived(DamageReceivedPacket{
+        PacketType::DamageReceived(DamageReceivedPacket {
             recipient: entity_id,
             damage: data,
-        })
+        }),
     ))
 }
 
-fn parse_setup_packet(entity_id: u32, supertype: u32, subtype: u32, i: &[u8]) -> IResult<&[u8], PacketType> {
+fn parse_setup_packet(
+    _entity_id: u32,
+    _supertype: u32,
+    _subtype: u32,
+    i: &[u8],
+) -> IResult<&[u8], PacketType> {
     let (i, packet) = parse_77(i)?;
-    Ok((
-        i,
-        PacketType::Setup(packet)
-    ))
+    Ok((i, PacketType::Setup(packet)))
 }
 
-fn parse_unknown_entity_packet(entity_id: u32, supertype: u32, subtype: u32, payload: &[u8]) -> IResult<&[u8], PacketType> {
+fn parse_unknown_entity_packet(
+    entity_id: u32,
+    supertype: u32,
+    subtype: u32,
+    payload: &[u8],
+) -> IResult<&[u8], PacketType> {
     Ok((
         &[],
-        PacketType::Entity(EntityPacket{
+        PacketType::Entity(EntityPacket {
             supertype: supertype,
             entity_id: entity_id,
             subtype: subtype,
             payload: payload,
-        })
+        }),
     ))
 }
 
-fn debug_packet(entity_id: u32, supertype: u32, subtype: u32, payload: &[u8]) -> IResult<&[u8], PacketType> {
+fn debug_packet(
+    entity_id: u32,
+    supertype: u32,
+    subtype: u32,
+    payload: &[u8],
+) -> IResult<&[u8], PacketType> {
     if payload.len() > 0 {
         let (i, cnt) = be_u8(payload)?;
         if cnt as usize * 8 == i.len() {
@@ -400,21 +472,31 @@ fn debug_packet(entity_id: u32, supertype: u32, subtype: u32, payload: &[u8]) ->
         }
     }
 
-    println!("Received {}-byte 0x{:x} 0x{:x} packet:", payload.len(), supertype, subtype);
+    println!(
+        "Received {}-byte 0x{:x} 0x{:x} packet:",
+        payload.len(),
+        supertype,
+        subtype
+    );
     hexdump::hexdump(payload);
     Ok((
         &[],
-        PacketType::Entity(EntityPacket{
+        PacketType::Entity(EntityPacket {
             supertype: supertype,
             entity_id: entity_id,
             subtype: subtype,
             payload: payload,
-        })
+        }),
     ))
 }
 
-fn lookup_entity_fn(version: u32, supertype: u32, subtype: u32) -> Option<fn(u32,u32,u32,&[u8]) -> IResult<&[u8], PacketType>> {
-    let fn_2571457 = || { // 0.9.4
+fn lookup_entity_fn(
+    version: u32,
+    supertype: u32,
+    subtype: u32,
+) -> Option<fn(u32, u32, u32, &[u8]) -> IResult<&[u8], PacketType>> {
+    let fn_2571457 = || {
+        // 0.9.4
         match (supertype, subtype) {
             (0x8, 0x76) => parse_chat_packet,
             (0x8, 0x77) => parse_setup_packet,
@@ -426,7 +508,8 @@ fn lookup_entity_fn(version: u32, supertype: u32, subtype: u32) -> Option<fn(u32
             _ => parse_unknown_entity_packet,
         }
     };
-    let fn_2643263 = || { // 0.9.5.1
+    let fn_2643263 = || {
+        // 0.9.5.1
         match (supertype, subtype) {
             (0x8, 0x78) => parse_chat_packet,
             (0x8, 0x79) => parse_setup_packet,
@@ -440,12 +523,8 @@ fn lookup_entity_fn(version: u32, supertype: u32, subtype: u32) -> Option<fn(u32
     };
 
     match version {
-        2571457 => {
-            Some(fn_2571457())
-        }
-        2643263 => {
-            Some(fn_2643263())
-        }
+        2571457 => Some(fn_2571457()),
+        2643263 => Some(fn_2643263()),
         _ => {
             //Err(error_from_kind(ErrorKind::UnsupportedReplayVersion(version)))
             None
@@ -459,23 +538,24 @@ fn parse_entity_packet(version: u32, supertype: u32, i: &[u8]) -> IResult<&[u8],
     let (i, subtype) = le_u32(i)?;
     let (i, payload_length) = le_u32(i)?;
     let (i, payload) = take(payload_length)(i)?;
-    //println!("Parsing {}-byte 0x{:x} 0x{:x} packet", payload_length, supertype, subtype);
-    /*if supertype == 0x8 && subtype == 0x79 {
-        parse_77(payload);
-}*/
     let verfn = match lookup_entity_fn(version, supertype, subtype) {
         Some(x) => x,
         None => {
-            return Err(failure_from_kind(ErrorKind::UnsupportedReplayVersion(version)))
+            return Err(failure_from_kind(ErrorKind::UnsupportedReplayVersion(
+                version,
+            )))
         }
     };
     let (remaining, packet) = verfn(entity_id, supertype, subtype, payload)?;
-    // TODO: Re-enable this assert
-    //assert!(remaining.len() == 0);
-    Ok((
-        i,
-        packet
-    ))
+    if remaining.len() != 0 {
+        return Err(failure_from_kind(ErrorKind::ParsingFailure(format!(
+            "Parsing entity packet 0x{:x}.0x{:x} left {} bytes at end of stream",
+            supertype,
+            subtype,
+            remaining.len()
+        ))));
+    }
+    Ok((i, packet))
 }
 
 fn parse_position_packet(i: &[u8]) -> IResult<&[u8], PacketType> {
@@ -496,18 +576,25 @@ fn parse_position_packet(i: &[u8]) -> IResult<&[u8], PacketType> {
     let (i, extra) = be_u8(i)?;
     Ok((
         i,
-        PacketType::Position(PositionPacket{
-            pid, x, y, z, rot_x, rot_y, rot_z, a, b, c, extra,
-        })
+        PacketType::Position(PositionPacket {
+            pid,
+            x,
+            y,
+            z,
+            rot_x,
+            rot_y,
+            rot_z,
+            a,
+            b,
+            c,
+            extra,
+        }),
     ))
 }
 
 fn parse_unknown_packet(i: &[u8], payload_size: u32) -> IResult<&[u8], PacketType> {
     let (i, contents) = take(payload_size)(i)?;
-    Ok((
-        i,
-        PacketType::Unknown(contents)
-    ))
+    Ok((i, PacketType::Unknown(contents)))
 }
 
 fn parse_packet(version: u32, i: &[u8]) -> IResult<&[u8], Packet> {
@@ -517,43 +604,32 @@ fn parse_packet(version: u32, i: &[u8]) -> IResult<&[u8], Packet> {
     let (remaining, i) = take(packet_size)(i)?;
     let raw = i;
     let (i, payload) = match packet_type {
-        0x7 | 0x8 => {
-            parse_entity_packet(version, packet_type, i)?
-        }
-        0xA => {
-            parse_position_packet(i)?
-        }
+        0x7 | 0x8 => parse_entity_packet(version, packet_type, i)?,
+        0xA => parse_position_packet(i)?,
         /*0x24 => {
             parse_type_24_packet(i)?
         }*/
-        0x2b => {
-            parse_player_orientation_packet(i)?
-        }
-        _ => {
-            parse_unknown_packet(i, packet_size)?
-        }
+        0x2b => parse_player_orientation_packet(i)?,
+        _ => parse_unknown_packet(i, packet_size)?,
     };
     assert!(i.len() == 0);
     Ok((
         remaining,
-        Packet{
+        Packet {
             packet_size: packet_size,
             packet_type: packet_type,
             clock: clock,
             payload: payload,
             raw: raw,
-        }
+        },
     ))
 }
 
 pub fn parse_packets(version: u32, i: &[u8]) -> Result<Vec<Packet>, ErrorKind> {
-    //many0(parse_packet)(i)
     let mut i = i;
-    let mut v = vec!();
+    let mut v = vec![];
     while i.len() > 0 {
-        //println!("Parsing remaining {} bytes...", i.len());
         let (remaining, packet) = parse_packet(version, i)?;
-        //assert!(remaining.len() == 0);
         i = remaining;
         v.push(packet);
     }
