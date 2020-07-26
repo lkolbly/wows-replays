@@ -1,6 +1,7 @@
 use nom::{bytes::complete::take, bytes::complete::tag, named, do_parse, take, tag, number::complete::be_u16, number::complete::le_u16, number::complete::be_u8, alt, cond, number::complete::be_u24, char, opt, one_of, take_while, length_data, many1, complete, number::complete::le_u32, number::complete::le_f32, multi::many0, number::complete::be_u32, multi::count, number::complete::le_u24};
 use std::collections::HashMap;
 use std::convert::TryInto;
+use log::debug;
 
 use crate::error::*;
 
@@ -231,7 +232,7 @@ fn parse_section2_key(i: &[u8]) -> IResult<&[u8], (u8, Vec<Type77>, HashMap<u32,
         Type77::ObjectKey(n) => { n },
         _ => { panic!("Got unexpected thing for ObjectKey"); }
     };
-    println!("Got key #{:?}", obj_key);
+    //println!("Got key #{:?}", obj_key);
     let (i, (data, _)) = nom::multi::many_till(parse_77_datum, tag([0x86]))(i)?;
     //println!("Got {} elements in key", data.len());
 
@@ -280,7 +281,7 @@ fn parse_section2_key(i: &[u8]) -> IResult<&[u8], (u8, Vec<Type77>, HashMap<u32,
         }
     }
 
-    println!("Data: {:x?}", data);
+    //println!("Data: {:x?}", data);
 
     //let (i, end_obj) = tag([0x86])(i)?;
 
@@ -320,7 +321,7 @@ fn parse_section2_array(i: &[u8]) -> IResult<&[u8], (HashMap<u8, Vec<Type77>>, H
     }
 
     //let (i, _) = tag([0x65, 0x5d])(i)?;
-    println!("Found {} keys", keys.len());
+    //println!("Found {} keys", keys.len());
     Ok((i, (data, tagged_data)))
 }
 
@@ -340,9 +341,9 @@ pub struct SetupPlayerInfo {
 }
 
 fn parse_section2(i: &[u8]) -> IResult<&[u8], Vec<SetupPlayerInfo>> {
-    hexdump::hexdump(&i[0..20]);
+    //hexdump::hexdump(&i[0..20]);
     let (i, _) = tag([0x5d, 0x71, 0x01, 0x28, 0x5d, 0x71, 0x02])(i)?;
-    println!("Got tag");
+    //println!("Got tag");
     let (i, players) = nom::multi::many1(parse_section2_array)(i)?;
 
     // Merge all the tagged data
@@ -368,11 +369,11 @@ fn parse_section2(i: &[u8]) -> IResult<&[u8], Vec<SetupPlayerInfo>> {
         }
     }
 
-    println!("Found {} players", players.len());
+    debug!("Found {} players", players.len());
     Ok((i, players.drain(..).map(|(mut player, _)| {
-        println!("Player data:");
+        debug!("Player data:");
         for i in 0..34 {
-            println!(" - {}: {:x?}", i, player.get(&i).unwrap());
+            debug!(" - {}: {:x?}", i, player.get(&i).unwrap());
         }
         let username = match &player.get(&22).expect("Couldn't find username field")[0] {
             Type77::String(s) => { s.clone() },
@@ -413,18 +414,18 @@ fn parse_section2(i: &[u8]) -> IResult<&[u8], Vec<SetupPlayerInfo>> {
 
 fn parse_sections(i: &[u8]) -> IResult<&[u8], Vec<SetupPlayerInfo>> {
     let (i, _) = parse_start_section(i)?;
-    println!("Got start section");
+    //println!("Got start section");
     let (i, _) = nom::multi::many_till(parse_77_datum, parse_end_section)(i)?;
-    println!("Got some data");
+    //println!("Got some data");
     let (i, _) = parse_next_section(i)?;
-    println!("Got next section");
+    //println!("Got next section");
     let (i, _) = parse_start_section(i)?;
-    println!("Got another start section");
+    //println!("Got another start section");
     let (i, players) = parse_section2(i)?;
-    for player in players.iter() {
-        println!("Found player: {:#?}", player);
+    /*for player in players.iter() {
+        debug!("Found player: {:#?}", player);
     }
-    println!("Got section2");
+    println!("Got section2");*/
     let (i, _) = parse_end_section(i)?;
     Ok((i, players))
 }

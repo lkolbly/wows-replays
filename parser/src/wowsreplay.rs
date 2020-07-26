@@ -57,7 +57,7 @@ struct Replay<'a> {
     compressed_stream: &'a [u8],
 }
 
-fn decode_meta(meta: &[u8]) -> Result<ReplayMeta, Error<&[u8]>> {
+fn decode_meta(meta: &[u8]) -> Result<ReplayMeta, Error> {
     let meta = std::str::from_utf8(meta)?;
     let meta: ReplayMeta = serde_json::from_str(meta)?;
     Ok(meta)

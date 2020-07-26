@@ -105,7 +105,7 @@ pub struct ArtilleryHitPacket<'a> {
     pub raw: &'a [u8],
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub enum Banner {
     PlaneShotDown,
     Incapacitation,
@@ -276,8 +276,9 @@ fn parse_artillery_hit_packet(entity_id: u32, supertype: u32, subtype: u32, i: &
         0 => { false },
         0xff => { true },
         _ => {
-            hexdump::hexdump(raw);
-            panic!(format!("Got unknown value 0x{:x} for secondary bitfield!", bitmask5));
+            return Err(failure_from_kind(ErrorKind::UnableToProcessPacket{
+                supertype, subtype, reason: format!("Got unknown value 0x{:x} for secondary bitfield in artillery packet", bitmask5), packet: raw.to_vec(),
+            }));
         }
     };
     let is_he = false;//(bitmask0 & (1 << 22)) != 0;
@@ -411,8 +412,7 @@ fn debug_packet(entity_id: u32, supertype: u32, subtype: u32, payload: &[u8]) ->
     ))
 }
 
-fn lookup_entity_fn(version: u32, supertype: u32, subtype: u32) -> fn(u32,u32,u32,&[u8]) -> IResult<&[u8], PacketType> {
-    // Note: These subtype numbers seem to change with version (0x76 -> 0x79? 0x3d/0x3e -> 0x3e/0x3f?)
+fn lookup_entity_fn(version: u32, supertype: u32, subtype: u32) -> Option<fn(u32,u32,u32,&[u8]) -> IResult<&[u8], PacketType>> {
     let fn_2571457 = || { // 0.9.4
         match (supertype, subtype) {
             (0x8, 0x76) => parse_chat_packet,
@@ -440,13 +440,15 @@ fn lookup_entity_fn(version: u32, supertype: u32, subtype: u32) -> fn(u32,u32,u3
 
     match version {
         2571457 => {
-            fn_2571457()
+            Some(fn_2571457())
         }
         2643263 => {
-            fn_2643263()
+            Some(fn_2643263())
         }
         _ => {
-            panic!("Got unknown version number {}!", version);
+            //Err(error_from_kind(ErrorKind::UnsupportedReplayVersion(version)))
+            None
+            //panic!("Got unknown version number {}!", version);
         }
     }
 }
@@ -459,8 +461,14 @@ fn parse_entity_packet(version: u32, supertype: u32, i: &[u8]) -> IResult<&[u8],
     //println!("Parsing {}-byte 0x{:x} 0x{:x} packet", payload_length, supertype, subtype);
     /*if supertype == 0x8 && subtype == 0x79 {
         parse_77(payload);
-    }*/
-    let (remaining, packet) = lookup_entity_fn(version, supertype, subtype)(entity_id, supertype, subtype, payload)?;
+}*/
+    let verfn = match lookup_entity_fn(version, supertype, subtype) {
+        Some(x) => x,
+        None => {
+            return Err(failure_from_kind(ErrorKind::UnsupportedReplayVersion(version)))
+        }
+    };
+    let (remaining, packet) = verfn(entity_id, supertype, subtype, payload)?;
     // TODO: Re-enable this assert
     //assert!(remaining.len() == 0);
     Ok((
@@ -537,7 +545,7 @@ fn parse_packet(version: u32, i: &[u8]) -> IResult<&[u8], Packet> {
     ))
 }
 
-pub fn parse_packets(version: u32, i: &[u8]) -> IResult<&[u8], Vec<Packet>> {
+pub fn parse_packets(version: u32, i: &[u8]) -> Result<Vec<Packet>, ErrorKind> {
     //many0(parse_packet)(i)
     let mut i = i;
     let mut v = vec!();
@@ -548,5 +556,5 @@ pub fn parse_packets(version: u32, i: &[u8]) -> IResult<&[u8], Vec<Packet>> {
         i = remaining;
         v.push(packet);
     }
-    Ok((i, v))
+    Ok(v)
 }

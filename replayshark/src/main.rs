@@ -7,7 +7,148 @@ use image::GenericImageView;
 use image::Pixel;
 use clap::{Arg, App, SubCommand};
 
-use wows_replays::{Error, ReplayFile, Packet, PacketType, parse_packets};
+use wows_replays::{Banner, Error, ReplayFile, Packet, PacketType, parse_packets};
+
+fn extract_banners(packets: &[Packet]) -> HashMap<Banner, usize> {
+    packets.iter().filter_map(|packet| match packet.payload {
+        PacketType::Banner(p) => Some(p),
+        _ => None,
+    }).fold(HashMap::new(), |mut acc, banner| {
+        if !acc.contains_key(&banner) {
+            acc.insert(banner, 0);
+        }
+        *acc.get_mut(&banner).unwrap() += 1;
+        acc
+    })
+}
+
+fn render_trails(packets: &[Packet]) {
+    let trails = packets.iter().filter_map(|packet| match &packet.payload {
+        PacketType::Position(p) => Some(p),
+        _ => None,
+    }).fold(HashMap::new(), |mut acc, p| {
+        if !acc.contains_key(&p.pid) {
+            acc.insert(p.pid, vec!());
+        }
+        acc.get_mut(&p.pid).unwrap().push((p.x as f64, p.z as f64));
+        acc
+    });
+
+    let player_trail = packets.iter().filter_map(|packet| match &packet.payload {
+        PacketType::PlayerOrientation(p) => Some(p),
+        _ => None,
+    }).fold(vec!(), |mut acc, p| {
+        acc.push((p.x as f64, p.z as f64));
+        acc
+    });
+
+    // Setup the render context
+    let root = BitMapBackend::new("test2.png", (2048, 2048)).into_drawing_area();
+    root.fill(&BLACK).unwrap();
+
+    // Blit the background into the image
+    {
+        let minimap = image::load(std::io::BufReader::new(std::fs::File::open("res_unpack/spaces/13_OC_new_dawn/minimap.png").unwrap()), ImageFormat::Png).unwrap();
+        let minimap_background = image::load(std::io::BufReader::new(std::fs::File::open("res_unpack/spaces/13_OC_new_dawn/minimap_water.png").unwrap()), ImageFormat::Png).unwrap();
+
+        let mut image = RgbImage::new(760, 760);
+        for x in 0..760 {
+            for y in 0..760 {
+                let bg = minimap_background.get_pixel(x, y);
+                let fg = minimap.get_pixel(x, y);
+                let mut bg = bg.clone();
+                bg.blend(&fg);
+                image.put_pixel(x, y, bg.to_rgb());
+            }
+        }
+        let image = image::DynamicImage::ImageRgb8(image);
+        let image = image.resize_exact(2048, 2048, FilterType::Lanczos3);
+
+        let mut ctx = ChartBuilder::on(&root)
+            .x_label_area_size(0)
+            .y_label_area_size(0)
+            .build_ranged(0.0..1.0, 0.0..1.0).unwrap();
+
+        //let image = image::load(std::io::BufReader::new(std::fs::File::open("320px-New_Dawn.png").unwrap()), ImageFormat::Png).unwrap().resize_exact(2048, 2048, FilterType::Nearest);
+        let elem: BitMapElement<_> = ((0.0, 1.0), image).into();
+        ctx.draw_series(std::iter::once(elem)).unwrap();
+    }
+
+    // Render the actual trails
+
+    // 600 for New Dawn (36x36km)
+    // 700 for Fault Line (42x42km)
+    let scale = 600.0;
+    let mut scatter_ctx = ChartBuilder::on(&root)
+        .x_label_area_size(0)
+        .y_label_area_size(0)
+        .build_ranged(-scale..scale, -scale..scale).unwrap();
+
+    let colors = [
+        BLUE,
+        CYAN,
+        GREEN,
+        MAGENTA,
+        RED,
+        WHITE,
+        YELLOW,
+    ];
+    println!("Have {} tracks", trails.len());
+    let mut min_x = 0.;
+    let mut max_x = 0.;
+    for (i,(_k,v)) in trails.iter().enumerate() {
+        //println!("{}", v.len());
+        let series_minx = v.iter().map(|(x, _y)| x).min_by(|a, b| { a.partial_cmp(b).unwrap() }).unwrap();
+        let series_maxx = v.iter().map(|(x, _y)| x).max_by(|a, b| { a.partial_cmp(b).unwrap() }).unwrap();
+        if *series_minx < min_x {
+            min_x = *series_minx;
+        }
+        if *series_maxx > max_x {
+            max_x = *series_maxx;
+        }
+        scatter_ctx.draw_series(
+            v.iter()
+                .map(|(x, y)| Circle::new((*x, *y), 1, colors[i % colors.len()].filled())),
+        ).unwrap();
+    }
+    println!("Min X: {} max X: {}", min_x, max_x);
+
+    // Add the trail for the player
+    {
+        /*let mut v = vec!();
+        for idx in 0..d0.len() {
+            v.push((d0[idx].1 as f64, d2[idx].1 as f64));
+        }*/
+        scatter_ctx.draw_series(
+            player_trail.iter()
+                .map(|(x, y)| Circle::new((*x, *y), 2, WHITE.filled())),
+        ).unwrap();
+    }
+}
+
+fn print_chatlog(packets: &[Packet]) {
+    for packet in packets.iter() {
+        match packet {
+            Packet { clock, payload: PacketType::Chat(p), .. } => {
+                println!("{}: {:?}", clock, p);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn print_summary(packets: &[Packet]) {
+    let banners = extract_banners(packets);
+    for (k,v) in banners.iter() {
+        println!("Banner {:?}: {}x", k, v);
+    }
+
+    let mut damage_dealt = packets.iter().filter_map(|packet| match &packet.payload {
+        PacketType::ArtilleryHit(p) => { if !p.is_incoming { Some(p.damage) } else { None }},
+        _ => None,
+    }).fold(0, |acc, x| { acc + x });
+    println!("Player dealt {} damage!", damage_dealt);
+}
 
 // From https://stackoverflow.com/questions/35901547/how-can-i-find-a-subsequence-in-a-u8-slice
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -21,13 +162,13 @@ fn find_float_approx(haystack: &[u8], needle: f32, epsilon: f32) -> Option<usize
     })
 }
 
-fn parse_replay(replay: &std::path::PathBuf) {
+fn parse_replay<F: Fn(u32, &[Packet])>(replay: &std::path::PathBuf, cb: F) -> Result<(), wows_replays::ErrorKind> {
     let replay_file = ReplayFile::from_file(replay);
 
     let version_parts: Vec<_> = replay_file.meta.clientVersionFromExe.split(",").collect();
     assert!(version_parts.len() == 4);
     let build: u32 = version_parts[3].parse().unwrap();
-    println!("File build version: {}", build);
+    //println!("File build version: {}", build);
 
     let root = BitMapBackend::new("test.png", (2048, 2048)).into_drawing_area();
     root.fill(&BLACK).unwrap();
@@ -51,8 +192,14 @@ fn parse_replay(replay: &std::path::PathBuf) {
     let needle = 323.0;//60650.0;//0.79122489796;//38770.0;
 
     // Parse packets
-    let (remaining, packets) = parse_packets(build, &replay_file.packet_data).unwrap();
-    let mut points = HashMap::new();
+    let packets = parse_packets(build, &replay_file.packet_data)?;
+
+    cb(build, &packets);
+    return Ok(());
+
+    render_trails(&packets);
+
+    //let mut points = HashMap::new();
     let mut d0 = vec!();
     let mut d1 = vec!();
     let mut d2 = vec!();
@@ -74,10 +221,10 @@ fn parse_replay(replay: &std::path::PathBuf) {
                 //
             }
             Packet { clock, payload: PacketType::Position(p), .. } => {
-                if !points.contains_key(&p.pid) {
+                /*if !points.contains_key(&p.pid) {
                     points.insert(p.pid, vec!());
                 }
-                points.get_mut(&p.pid).unwrap().push((p.x as f64, p.z as f64));
+                points.get_mut(&p.pid).unwrap().push((p.x as f64, p.z as f64));*/
             }
             Packet { clock, payload: PacketType::Entity(p), .. } => {
                 if p.supertype == 0x8 {
@@ -198,7 +345,7 @@ fn parse_replay(replay: &std::path::PathBuf) {
     }
 
     // Blit in the map
-    {
+    /*{
         let mut ctx = ChartBuilder::on(&root)
             .x_label_area_size(0)
             .y_label_area_size(0)
@@ -276,7 +423,7 @@ fn parse_replay(replay: &std::path::PathBuf) {
             v.iter()
                 .map(|(x, y)| Circle::new((*x, *y), 2, WHITE.filled())),
         ).unwrap();
-    }
+    }*/
 
     // Draw the chart
     {
@@ -422,6 +569,8 @@ fn parse_replay(replay: &std::path::PathBuf) {
     println!("Found {} different packet types", packet_counts.len());
     println!("Player did {} damage!", total_damage);
 
+    let banners = extract_banners(&packets);
+
     for (k,v) in banners.iter() {
         println!("Banner {:?}: {}x", k, v);
     }
@@ -436,23 +585,67 @@ fn parse_replay(replay: &std::path::PathBuf) {
             }
             _ => {}
         }
-    }*/
+}*/
+
+    Ok(())
 }
 
 fn main() {
+    let replay_arg = Arg::with_name("REPLAY")
+        .help("The replay file to use")
+        .required(true)
+        .index(1);
     let matches = App::new("World of Warships Replay Parser Utility")
         .version("0.1.0")
         .author("Lane Kolbly <lane@rscheme.org>")
         .about("Parses & processes World of Warships replay files")
-        .arg(Arg::with_name("REPLAY")
-             .help("The replay file to use")
-             .required(true)
-             .index(1))
+        .subcommand(SubCommand::with_name("trace")
+                    .about("Renders an image showing the trails of ships over the course of the game")
+                    .arg(replay_arg.clone()))
+        .subcommand(SubCommand::with_name("survey")
+                    .about("Runs the parser against a directory of replays to validate the parser")
+                    .arg(Arg::with_name("REPLAYS")
+                         .help("The replay files to use")
+                         .required(true)
+                         .multiple(true)))
+        .subcommand(SubCommand::with_name("chat")
+                    .about("Print the chat log of the given game")
+                    .arg(replay_arg.clone()))
+        .subcommand(SubCommand::with_name("summary")
+                    .about("Generate summary statistics of the game")
+                    .arg(replay_arg.clone()))
         .get_matches();
 
-    let input = matches.value_of("REPLAY").unwrap();
-
-    parse_replay(&std::path::PathBuf::from(input));
+    if let Some(matches) = matches.subcommand_matches("summary") {
+        let input = matches.value_of("REPLAY").unwrap();
+        parse_replay(&std::path::PathBuf::from(input), |_, packets| {
+            print_summary(packets);
+        });
+    }
+    if let Some(matches) = matches.subcommand_matches("chat") {
+        let input = matches.value_of("REPLAY").unwrap();
+        parse_replay(&std::path::PathBuf::from(input), |_, packets| {
+            print_chatlog(packets);
+        });
+    }
+    if let Some(matches) = matches.subcommand_matches("trace") {
+        let input = matches.value_of("REPLAY").unwrap();
+        parse_replay(&std::path::PathBuf::from(input), |_, packets| {
+            render_trails(packets);
+        });
+    }
+    if let Some(matches) = matches.subcommand_matches("survey") {
+        for replay in matches.values_of("REPLAYS").unwrap() {
+            match parse_replay(&std::path::PathBuf::from(replay), |_, packets| {
+                println!("Successfully parsed {}", replay);
+            }) {
+                Ok(_) => {}
+                Err(e) => {
+                    println!("Error parsing {}: {:?}", replay, e);
+                }
+            };
+        }
+    }
 
     //parse_replay(&std::path::PathBuf::from("replays/20200605_183626_PASB008-Colorado-1945_13_OC_new_dawn.wowsreplay"));
     //parse_replay(&std::path::PathBuf::from("replays/20200627_181328_PASC207-Helena_19_OC_prey.wowsreplay"));
