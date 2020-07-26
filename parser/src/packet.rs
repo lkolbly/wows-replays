@@ -1,3 +1,4 @@
+use log::warn;
 use nom::{
     bytes::complete::take, multi::count, number::complete::be_u32, number::complete::be_u8,
     number::complete::le_f32, number::complete::le_u32,
@@ -114,6 +115,18 @@ pub enum Banner {
     NonPenetration,
     Ricochet,
     TorpedoProtectionHit,
+    Captured,
+    AssistedInCapture,
+    Spotted,
+    Destroyed,
+    TorpedoHit,
+    Defended,
+    Flooding,
+    DiveBombPenetration,
+    RocketPenetration,
+    RocketNonPenetration,
+    RocketTorpedoProtectionHit,
+    ShotDownByAircraft,
 }
 
 #[derive(Debug, Serialize)]
@@ -357,16 +370,28 @@ fn parse_banner_packet(
     let raw = i;
     let (i, banner) = be_u8(i)?;
     let banner = match banner {
+        1 => Banner::TorpedoHit,
         3 => Banner::PlaneShotDown,
         4 => Banner::Incapacitation,
+        5 => Banner::Destroyed,
         6 => Banner::SetFire,
+        7 => Banner::Flooding,
         8 => Banner::Citadel,
+        9 => Banner::Defended,
+        10 => Banner::Captured,
+        11 => Banner::AssistedInCapture,
         13 => Banner::SecondaryHit,
         14 => Banner::OverPenetration,
         15 => Banner::Penetration,
         16 => Banner::NonPenetration,
         17 => Banner::Ricochet,
+        19 => Banner::Spotted,
+        21 => Banner::DiveBombPenetration,
+        25 => Banner::RocketPenetration,
+        26 => Banner::RocketNonPenetration,
+        27 => Banner::ShotDownByAircraft,
         28 => Banner::TorpedoProtectionHit,
+        30 => Banner::RocketTorpedoProtectionHit,
         _ => {
             return Err(failure_from_kind(ErrorKind::UnableToProcessPacket {
                 supertype,
@@ -495,6 +520,7 @@ fn lookup_entity_fn(
     supertype: u32,
     subtype: u32,
 ) -> Option<fn(u32, u32, u32, &[u8]) -> IResult<&[u8], PacketType>> {
+    let fn_0 = || parse_unknown_entity_packet;
     let fn_2571457 = || {
         // 0.9.4
         match (supertype, subtype) {
@@ -523,6 +549,7 @@ fn lookup_entity_fn(
     };
 
     match version {
+        0 => Some(fn_0()),
         2571457 => Some(fn_2571457()),
         2643263 => Some(fn_2643263()),
         _ => {
@@ -548,12 +575,12 @@ fn parse_entity_packet(version: u32, supertype: u32, i: &[u8]) -> IResult<&[u8],
     };
     let (remaining, packet) = verfn(entity_id, supertype, subtype, payload)?;
     if remaining.len() != 0 {
-        return Err(failure_from_kind(ErrorKind::ParsingFailure(format!(
+        warn!(
             "Parsing entity packet 0x{:x}.0x{:x} left {} bytes at end of stream",
             supertype,
             subtype,
             remaining.len()
-        ))));
+        );
     }
     Ok((i, packet))
 }

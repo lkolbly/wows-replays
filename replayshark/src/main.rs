@@ -223,6 +223,25 @@ fn parse_replay<F: Fn(u32, &ReplayMeta, &[Packet])>(
     Ok(())
 }
 
+fn parse_replay_force_version<F: Fn(u32, &ReplayMeta, &[Packet])>(
+    version: Option<u32>,
+    replay: &std::path::PathBuf,
+    cb: F,
+) -> Result<(), wows_replays::ErrorKind> {
+    let replay_file = ReplayFile::from_file(replay);
+
+    let version_parts: Vec<_> = replay_file.meta.clientVersionFromExe.split(",").collect();
+    assert!(version_parts.len() == 4);
+    let build: u32 = version.unwrap_or(version_parts[3].parse().unwrap());
+
+    // Parse packets
+    let packets = parse_packets(build, &replay_file.packet_data)?;
+
+    cb(build, &replay_file.meta, &packets);
+
+    Ok(())
+}
+
 fn main() {
     let replay_arg = Arg::with_name("REPLAY")
         .help("The replay file to use")
@@ -260,23 +279,79 @@ fn main() {
         .subcommand(
             SubCommand::with_name("dump")
                 .about("Dump the packets to console")
+                .arg(
+                    Arg::with_name("no-parse-entity")
+                        .long("no-parse-entity")
+                        .help("Parse all entity packets as unknown"),
+                )
+                .arg(
+                    Arg::with_name("filter-super")
+                        .long("filter-super")
+                        .help("Filter packets to be the given entity supertype")
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("filter-sub")
+                        .long("filter-sub")
+                        .help("Filter packets to be the given entity subtype")
+                        .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("no-meta")
+                        .long("no-meta")
+                        .help("Don't output the metadata"),
+                )
                 .arg(replay_arg.clone()),
         )
         .get_matches();
 
     if let Some(matches) = matches.subcommand_matches("dump") {
         let input = matches.value_of("REPLAY").unwrap();
-        parse_replay(&std::path::PathBuf::from(input), |_, meta, packets| {
-            println!(
-                "{}",
-                serde_json::to_string(&meta).expect("Couldn't JSON-format metadata")
-            );
-            for packet in packets {
-                let s =
-                    serde_json::to_string(&packet).expect("Couldn't JSON-format serialize packet");
-                println!("{}", s);
-            }
-        })
+        parse_replay_force_version(
+            if matches.is_present("no-parse-entity") {
+                Some(0)
+            } else {
+                None
+            },
+            &std::path::PathBuf::from(input),
+            |_, meta, packets| {
+                if !matches.is_present("no-meta") {
+                    println!(
+                        "{}",
+                        serde_json::to_string(&meta).expect("Couldn't JSON-format metadata")
+                    );
+                }
+                for packet in packets {
+                    let superfilter: Option<u32> =
+                        matches.value_of("filter-super").map(|x| x.parse().unwrap());
+                    let subfilter: Option<u32> =
+                        matches.value_of("filter-sub").map(|x| x.parse().unwrap());
+                    match &packet.payload {
+                        PacketType::Entity(p) => {
+                            if let Some(sup) = superfilter {
+                                if p.supertype != sup {
+                                    continue;
+                                }
+                            }
+                            if let Some(sub) = subfilter {
+                                if p.subtype != sub {
+                                    continue;
+                                }
+                            }
+                        }
+                        _ => match (superfilter, subfilter) {
+                            (None, None) => {}
+                            _ => {
+                                continue;
+                            }
+                        },
+                    };
+                    let s = serde_json::to_string(&packet)
+                        .expect("Couldn't JSON-format serialize packet");
+                    println!("{}", s);
+                }
+            },
+        )
         .unwrap();
     }
     if let Some(matches) = matches.subcommand_matches("summary") {

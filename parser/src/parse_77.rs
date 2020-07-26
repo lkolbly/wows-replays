@@ -467,5 +467,9 @@ pub fn parse_77(i: &[u8]) -> IResult<&[u8], SetupPacket> {
     debug!("Got {} bytes of start data: {:?}", start.len(), start);
 
     let (i, players) = parse_sections(i)?;
+
+    let (i, end) = take(i.len())(i)?;
+    debug!("Got {} bytes of ending data: {:?}", end.len(), end);
+
     Ok((i, SetupPacket { players }))
 }
