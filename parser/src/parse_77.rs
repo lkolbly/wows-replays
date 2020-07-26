@@ -2,6 +2,7 @@ use nom::{bytes::complete::take, bytes::complete::tag, named, do_parse, take, ta
 use std::collections::HashMap;
 use std::convert::TryInto;
 use log::debug;
+use serde_derive::Serialize;
 
 use crate::error::*;
 
@@ -325,7 +326,7 @@ fn parse_section2_array(i: &[u8]) -> IResult<&[u8], (HashMap<u8, Vec<Type77>>, H
     Ok((i, (data, tagged_data)))
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct SetupPlayerInfo {
     username: String,
     clan: String,
@@ -435,7 +436,7 @@ fn parse_sections(i: &[u8]) -> IResult<&[u8], Vec<SetupPlayerInfo>> {
     Ok((i, Type77::Unknown(x)))
 }*/
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct SetupPacket {
     players: Vec<SetupPlayerInfo>,
 }

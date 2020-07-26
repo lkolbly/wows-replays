@@ -1,6 +1,7 @@
 use nom::{bytes::complete::take, bytes::complete::tag, named, do_parse, take, tag, number::complete::be_u16, number::complete::le_u16, number::complete::be_u8, alt, cond, number::complete::be_u24, char, opt, one_of, take_while, length_data, many1, complete, number::complete::le_u32, number::complete::le_f32, multi::many0, number::complete::be_u32, multi::count};
 use std::collections::HashMap;
 use std::convert::TryInto;
+use serde_derive::Serialize;
 
 //mod error;
 //mod wowsreplay;
@@ -9,7 +10,7 @@ use crate::error::*;
 use crate::parse_77::*;
 //use crate::wowsreplay::*;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct PositionPacket {
     pub pid: u32,
     //clock: f32,
@@ -26,7 +27,7 @@ pub struct PositionPacket {
     //raw: &'a [u8],
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct EntityPacket<'a> {
     pub supertype: u32,
     pub entity_id: u32,
@@ -34,7 +35,7 @@ pub struct EntityPacket<'a> {
     pub payload: &'a [u8],
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct ChatPacket<'a> {
     pub entity_id: u32, // TODO: Is entity ID different than sender ID?
     pub sender_id: u32,
@@ -42,12 +43,12 @@ pub struct ChatPacket<'a> {
     pub message: &'a str,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct TimingPacket {
     pub time: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Type24Packet {
     pub f0: f32,
     pub f1: f32,
@@ -69,7 +70,7 @@ pub struct Type24Packet {
 /// describes both the player's boat location/orientation as well as the
 /// camera orientation. When the camera is attached to an object, the ID of
 /// that object will be given in the parent_id field.
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct PlayerOrientationPacket {
     pub pid: u32,
     pub parent_id: u32,
@@ -88,7 +89,7 @@ pub struct PlayerOrientationPacket {
     pub f5: f32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct ArtilleryHitPacket<'a> {
     pub subject: u32, // A player ID
     pub is_incoming: bool,
@@ -105,7 +106,7 @@ pub struct ArtilleryHitPacket<'a> {
     pub raw: &'a [u8],
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize)]
 pub enum Banner {
     PlaneShotDown,
     Incapacitation,
@@ -119,13 +120,13 @@ pub enum Banner {
     TorpedoProtectionHit,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct DamageReceivedPacket {
     recipient: u32,
     damage: Vec<(u32, f32)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub enum PacketType<'a> {
     Position(PositionPacket),
     Entity(EntityPacket<'a>), // 0x7 and 0x8 are known to be of this type
@@ -141,7 +142,7 @@ pub enum PacketType<'a> {
     Unknown(&'a [u8]),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Packet<'a> {
     pub packet_size: u32,
     pub packet_type: u32,
