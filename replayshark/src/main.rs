@@ -254,7 +254,13 @@ fn main() {
         .subcommand(
             SubCommand::with_name("trace")
                 .about("Renders an image showing the trails of ships over the course of the game")
-                .arg(Arg::with_name("out").long("output").help("Output PNG file to write").takes_value(true).required(true))
+                .arg(
+                    Arg::with_name("out")
+                        .long("output")
+                        .help("Output PNG file to write")
+                        .takes_value(true)
+                        .required(true),
+                )
                 .arg(replay_arg.clone()),
         )
         .subcommand(
@@ -391,15 +397,21 @@ fn main() {
         for replay in matches.values_of("REPLAYS").unwrap() {
             total += 1;
             match parse_replay(&std::path::PathBuf::from(replay), |_, _, packets| {
-                let invalid_packets: Vec<_> = packets.iter().filter_map(|packet| match &packet.payload {
-                    PacketType::Invalid(p) => {
-                        Some(p)
-                    }
-                    _ => None
-                }).collect();
+                let invalid_packets: Vec<_> = packets
+                    .iter()
+                    .filter_map(|packet| match &packet.payload {
+                        PacketType::Invalid(p) => Some(p),
+                        _ => None,
+                    })
+                    .collect();
                 if invalid_packets.len() > 0 {
                     other_failures += 1;
-                    println!("Failed to parse {} of {} packets in {}", invalid_packets.len(), packets.len(), replay);
+                    println!(
+                        "Failed to parse {} of {} packets in {}",
+                        invalid_packets.len(),
+                        packets.len(),
+                        replay
+                    );
                 } else {
                     println!("Successfully parsed {}", replay);
                 }

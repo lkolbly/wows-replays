@@ -648,10 +648,7 @@ fn parse_naked_packet(version: u32, packet_type: u32, i: &[u8]) -> IResult<&[u8]
         0x2b => parse_player_orientation_packet(i)?,
         _ => parse_unknown_packet(i, i.len().try_into().unwrap())?,
     };
-    Ok((
-        i,
-        payload
-    ))
+    Ok((i, payload))
 }
 
 fn parse_packet(version: u32, i: &[u8]) -> IResult<&[u8], Packet> {
@@ -661,28 +658,31 @@ fn parse_packet(version: u32, i: &[u8]) -> IResult<&[u8], Packet> {
     let (remaining, i) = take(packet_size)(i)?;
     let raw = i;
     /*let (i, payload) = match packet_type {
-        0x7 | 0x8 => parse_entity_packet(version, packet_type, i)?,
-        0xA => parse_position_packet(i)?,
-        /*0x24 => {
-            parse_type_24_packet(i)?
-        }*/
-        0x2b => parse_player_orientation_packet(i)?,
-        _ => parse_unknown_packet(i, packet_size)?,
-};*/
+            0x7 | 0x8 => parse_entity_packet(version, packet_type, i)?,
+            0xA => parse_position_packet(i)?,
+            /*0x24 => {
+                parse_type_24_packet(i)?
+            }*/
+            0x2b => parse_player_orientation_packet(i)?,
+            _ => parse_unknown_packet(i, packet_size)?,
+    };*/
     let (i, payload) = match parse_naked_packet(version, packet_type, i) {
-        Ok(x) => { x },
-        Err(nom::Err::Failure(Error{ kind: ErrorKind::UnsupportedReplayVersion(n), .. })) => {
+        Ok(x) => x,
+        Err(nom::Err::Failure(Error {
+            kind: ErrorKind::UnsupportedReplayVersion(n),
+            ..
+        })) => {
             return Err(failure_from_kind(ErrorKind::UnsupportedReplayVersion(n)));
-        },
+        }
         Err(e) => {
             (
                 &i[0..0], // Empty reference
-                PacketType::Invalid(InvalidPacket{
+                PacketType::Invalid(InvalidPacket {
                     message: format!("{:?}", e),
                     raw: i,
                 }),
             )
-        },
+        }
     };
     assert!(i.len() == 0);
     Ok((
