@@ -136,6 +136,12 @@ pub struct DamageReceivedPacket {
 }
 
 #[derive(Debug, Serialize)]
+pub struct InvalidPacket<'a> {
+    message: String,
+    raw: &'a [u8],
+}
+
+#[derive(Debug, Serialize)]
 pub enum PacketType<'a> {
     Position(PositionPacket),
     Entity(EntityPacket<'a>), // 0x7 and 0x8 are known to be of this type
@@ -149,6 +155,9 @@ pub enum PacketType<'a> {
     Type8_79(Vec<(u32, u32)>),
     Setup(SetupPacket),
     Unknown(&'a [u8]),
+
+    /// These are packets which we thought we understood, but couldn't parse
+    Invalid(InvalidPacket<'a>),
 }
 
 #[derive(Debug, Serialize)]
@@ -416,6 +425,7 @@ fn parse_damage_received_packet(
     subtype: u32,
     i: &[u8],
 ) -> IResult<&[u8], PacketType> {
+    let raw = i;
     let (i, cnt) = be_u8(i)?;
     if cnt == 0 {
         // TODO: It's not clear what's actually happening here
@@ -433,16 +443,14 @@ fn parse_damage_received_packet(
         ));
     }
     if i.len() != 8 * cnt as usize {
-        println!("Unclear damage recv'd packet: cnt={}", cnt);
-        hexdump::hexdump(i);
+        //println!("Unclear damage recv'd packet: cnt={}", cnt);
+        //hexdump::hexdump(i);
         //panic!();
         return Ok((
             &[],
-            PacketType::Entity(EntityPacket {
-                supertype,
-                entity_id,
-                subtype,
-                payload: i,
+            PacketType::Invalid(InvalidPacket {
+                message: format!("Unclear damage recv'd packet: cnt={}", cnt),
+                raw: raw,
             }),
         ));
     }
@@ -534,8 +542,8 @@ fn lookup_entity_fn(
             _ => parse_unknown_entity_packet,
         }
     };
-    let fn_2643263 = || {
-        // 0.9.5.1
+    let fn_2591463 = || {
+        // 0.9.5.0
         match (supertype, subtype) {
             (0x8, 0x78) => parse_chat_packet,
             (0x8, 0x79) => parse_setup_packet,
@@ -547,11 +555,17 @@ fn lookup_entity_fn(
             _ => parse_unknown_entity_packet,
         }
     };
+    let fn_2643263 = fn_2591463; // 0.9.5.1
+    let fn_2666186 = fn_2643263; // 0.9.6.0
+    let fn_2697511 = fn_2666186; // 0.9.6.1
 
     match version {
         0 => Some(fn_0()),
         2571457 => Some(fn_2571457()),
+        2591463 => Some(fn_2591463()),
         2643263 => Some(fn_2643263()),
+        2666186 => Some(fn_2666186()),
+        2697511 => Some(fn_2697511()),
         _ => {
             //Err(error_from_kind(ErrorKind::UnsupportedReplayVersion(version)))
             None
@@ -624,12 +638,7 @@ fn parse_unknown_packet(i: &[u8], payload_size: u32) -> IResult<&[u8], PacketTyp
     Ok((i, PacketType::Unknown(contents)))
 }
 
-fn parse_packet(version: u32, i: &[u8]) -> IResult<&[u8], Packet> {
-    let (i, packet_size) = le_u32(i)?;
-    let (i, packet_type) = le_u32(i)?;
-    let (i, clock) = le_f32(i)?;
-    let (remaining, i) = take(packet_size)(i)?;
-    let raw = i;
+fn parse_naked_packet(version: u32, packet_type: u32, i: &[u8]) -> IResult<&[u8], PacketType> {
     let (i, payload) = match packet_type {
         0x7 | 0x8 => parse_entity_packet(version, packet_type, i)?,
         0xA => parse_position_packet(i)?,
@@ -637,7 +646,43 @@ fn parse_packet(version: u32, i: &[u8]) -> IResult<&[u8], Packet> {
             parse_type_24_packet(i)?
         }*/
         0x2b => parse_player_orientation_packet(i)?,
+        _ => parse_unknown_packet(i, i.len().try_into().unwrap())?,
+    };
+    Ok((
+        i,
+        payload
+    ))
+}
+
+fn parse_packet(version: u32, i: &[u8]) -> IResult<&[u8], Packet> {
+    let (i, packet_size) = le_u32(i)?;
+    let (i, packet_type) = le_u32(i)?;
+    let (i, clock) = le_f32(i)?;
+    let (remaining, i) = take(packet_size)(i)?;
+    let raw = i;
+    /*let (i, payload) = match packet_type {
+        0x7 | 0x8 => parse_entity_packet(version, packet_type, i)?,
+        0xA => parse_position_packet(i)?,
+        /*0x24 => {
+            parse_type_24_packet(i)?
+        }*/
+        0x2b => parse_player_orientation_packet(i)?,
         _ => parse_unknown_packet(i, packet_size)?,
+};*/
+    let (i, payload) = match parse_naked_packet(version, packet_type, i) {
+        Ok(x) => { x },
+        Err(nom::Err::Failure(Error{ kind: ErrorKind::UnsupportedReplayVersion(n), .. })) => {
+            return Err(failure_from_kind(ErrorKind::UnsupportedReplayVersion(n)));
+        },
+        Err(e) => {
+            (
+                &i[0..0], // Empty reference
+                PacketType::Invalid(InvalidPacket{
+                    message: format!("{:?}", e),
+                    raw: i,
+                }),
+            )
+        },
     };
     assert!(i.len() == 0);
     Ok((
