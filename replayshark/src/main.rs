@@ -91,16 +91,56 @@ fn render_trails(meta: &ReplayMeta, packets: &[Packet], output: &str) {
             .build_ranged(0.0..1.0, 0.0..1.0)
             .unwrap();
 
-        //let image = image::load(std::io::BufReader::new(std::fs::File::open("320px-New_Dawn.png").unwrap()), ImageFormat::Png).unwrap().resize_exact(2048, 2048, FilterType::Nearest);
         let elem: BitMapElement<_> = ((0.0, 1.0), image).into();
         ctx.draw_series(std::iter::once(elem)).unwrap();
     }
 
     // Render the actual trails
 
+    let mut map_widths: HashMap<String, u32> = HashMap::new();
+    map_widths.insert("spaces/34_OC_islands".to_string(), 24);
+    map_widths.insert("spaces/33_new_tierra".to_string(), 24);
+    map_widths.insert("spaces/01_solomon_islands".to_string(), 30);
+    map_widths.insert("spaces/10_NE_big_race".to_string(), 30);
+    map_widths.insert("spaces/04_Archipelago".to_string(), 30);
+    map_widths.insert("spaces/05_Ring".to_string(), 36);
+    map_widths.insert("spaces/08_NE_passage".to_string(), 36);
+    map_widths.insert("spaces/13_OC_new_dawn".to_string(), 36);
+    map_widths.insert("spaces/17_NA_fault_line".to_string(), 42);
+    map_widths.insert("spaces/41_Conquest".to_string(), 42);
+    map_widths.insert("spaces/46_Estuary".to_string(), 42);
+    map_widths.insert("spaces/42_Neighbors".to_string(), 42);
+    map_widths.insert("spaces/50_Gold_harbor".to_string(), 42);
+    map_widths.insert("spaces/20_NE_two_brothers".to_string(), 42);
+    map_widths.insert("spaces/16_OC_bees_to_honey".to_string(), 48);
+    map_widths.insert("spaces/22_tierra_del_fuego".to_string(), 48);
+    map_widths.insert("spaces/15_NE_north".to_string(), 48);
+    map_widths.insert("spaces/35_NE_north_winter".to_string(), 48);
+    map_widths.insert("spaces/53_Shoreside".to_string(), 42);
+    map_widths.insert("spaces/23_Shards".to_string(), 42);
+    map_widths.insert("spaces/19_OC_prey".to_string(), 42);
+    map_widths.insert("spaces/52_Britain".to_string(), 42);
+    map_widths.insert("spaces/40_Okinawa".to_string(), 42);
+    map_widths.insert("spaces/18_NE_ice_islands".to_string(), 42);
+    map_widths.insert("spaces/14_Atlantic".to_string(), 42);
+    map_widths.insert("spaces/38_Canada".to_string(), 48);
+    map_widths.insert("spaces/37_Ridge".to_string(), 48);
+    map_widths.insert("spaces/44_Path_warrior".to_string(), 48);
+    map_widths.insert("spaces/25_sea_hope".to_string(), 48);
+    map_widths.insert("spaces/45_Zigzag".to_string(), 48);
+    map_widths.insert("spaces/47_Sleeping_Giant".to_string(), 48);
+    map_widths.insert("spaces/51_Greece".to_string(), 42);
+    map_widths.insert("spaces/28_naval_mission".to_string(), 42);
+    map_widths.insert("spaces/00_CO_ocean".to_string(), 36);
+
     // 600 for New Dawn (36x36km)
     // 700 for Fault Line (42x42km)
-    let scale = 600.0;
+    let scale = map_widths
+        .get(&meta.mapName)
+        .expect(&format!("Could not find size of map {}!", meta.mapName))
+        * 50
+        / 3;
+    let scale = scale as f64;
     let mut scatter_ctx = ChartBuilder::on(&root)
         .x_label_area_size(0)
         .y_label_area_size(0)
@@ -108,7 +148,6 @@ fn render_trails(meta: &ReplayMeta, packets: &[Packet], output: &str) {
         .unwrap();
 
     let colors = [BLUE, CYAN, GREEN, MAGENTA, RED, WHITE, YELLOW];
-    println!("Have {} tracks", trails.len());
     let mut min_x = 0.;
     let mut max_x = 0.;
     for (i, (_k, v)) in trails.iter().enumerate() {
@@ -136,7 +175,6 @@ fn render_trails(meta: &ReplayMeta, packets: &[Packet], output: &str) {
             )
             .unwrap();
     }
-    println!("Min X: {} max X: {}", min_x, max_x);
 
     // Add the trail for the player
     {

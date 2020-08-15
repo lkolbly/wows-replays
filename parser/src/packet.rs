@@ -558,6 +558,7 @@ fn lookup_entity_fn(
     let fn_2643263 = fn_2591463; // 0.9.5.1
     let fn_2666186 = fn_2643263; // 0.9.6.0
     let fn_2697511 = fn_2666186; // 0.9.6.1
+    let fn_2744482 = fn_2697511; // 0.9.7.0
 
     match version {
         0 => Some(fn_0()),
@@ -566,6 +567,7 @@ fn lookup_entity_fn(
         2643263 => Some(fn_2643263()),
         2666186 => Some(fn_2666186()),
         2697511 => Some(fn_2697511()),
+        2744482 => Some(fn_2744482()),
         _ => {
             //Err(error_from_kind(ErrorKind::UnsupportedReplayVersion(version)))
             None

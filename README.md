@@ -54,6 +54,7 @@ The following game versions are currently supported:
 - 0.9.4
 - 0.9.5 (and .1)
 - 0.9.6 (and .1)
+- 0.9.7
 
 The version policy for this component is forward-looking: After game version X is released, I won't work very hard to decode new packets from version X-1 and below. To the extent practical, though, support for older versions will be maintained.
 
