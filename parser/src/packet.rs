@@ -80,7 +80,7 @@ pub struct PlayerOrientationPacket {
 
     /// Radians, 0 is North and positive numbers are clockwise
     /// e.g. pi/2 is due East, -pi/2 is due West, and +/-pi is due South.
-    pub bearing: f32,
+    pub heading: f32,
 
     pub f4: f32,
     pub f5: f32,
@@ -176,7 +176,7 @@ fn parse_player_orientation_packet(i: &[u8]) -> IResult<&[u8], PacketType> {
     let (i, x) = le_f32(i)?;
     let (i, y) = le_f32(i)?;
     let (i, z) = le_f32(i)?;
-    let (i, bearing) = le_f32(i)?;
+    let (i, heading) = le_f32(i)?;
     let (i, f4) = le_f32(i)?;
     let (i, f5) = le_f32(i)?;
     Ok((
@@ -187,7 +187,7 @@ fn parse_player_orientation_packet(i: &[u8]) -> IResult<&[u8], PacketType> {
             x,
             y,
             z,
-            bearing,
+            heading,
             f4,
             f5,
         }),

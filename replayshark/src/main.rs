@@ -342,9 +342,33 @@ fn main() {
                         .takes_value(true),
                 )
                 .arg(
+                    Arg::with_name("exclude-subtypes")
+                        .long("exclude-subtypes")
+                        .help("A comma-delimited list of Entity subtypes to exclude")
+                        .takes_value(true)
+                )
+                .arg(
+                    Arg::with_name("timestamps")
+                        .long("timestamps")
+                        .help("A comma-delimited list of timestamps to highlight in the output")
+                        .takes_value(true)
+                )
+                .arg(
+                    Arg::with_name("timestamp-offset")
+                        .long("timestamp-offset")
+                        .help("Number of seconds to subtract from the timestamps")
+                        .takes_value(true)
+                )
+                .arg(
                     Arg::with_name("no-meta")
                         .long("no-meta")
                         .help("Don't output the metadata"),
+                )
+                .arg(
+                    Arg::with_name("speed")
+                        .long("speed")
+                        .help("Play back the file at the given speed multiplier")
+                        .takes_value(true),
                 )
                 .arg(replay_arg.clone()),
         )
@@ -360,12 +384,58 @@ fn main() {
             },
             &std::path::PathBuf::from(input),
             |_, meta, packets| {
+
+                let timestamp_offset: u32 = matches.value_of("timestamp-offset").unwrap_or("0").parse().expect("Couldn't parse timestamp-offset as float");
+
+                let mut timestamps: Vec<u32> = matches.value_of("timestamps").unwrap_or("").split(',').map(|x| {
+                    if x.len() == 0 { // TODO: This is a workaround for empty
+                        return 0;
+                    }
+                    let parts: Vec<&str> = x.split(':').collect();
+                    assert!(parts.len() == 2);
+                    let m: u32 = parts[0].parse().unwrap();
+                    let s: u32 = parts[1].parse().unwrap();
+                    (m * 60 + s) - timestamp_offset
+                }).collect();
+                timestamps.sort();
+                if timestamps.len() == 1 && timestamps[0] == 0 { // TODO: Workaround for empty timestamps specifier
+                    timestamps = vec!();
+                }
+                //println!("{:?}", timestamps);
+
+                #[derive(PartialEq)]
+                enum PacketIdent {
+                    PacketType(u32),
+                    WithSubtype((u32, u32)),
+                };
+
+                let mut exclude_packets: Vec<PacketIdent> = matches.value_of("exclude-subtypes").unwrap_or("").split(',').map(|x| {
+                    if x.len() == 0 { // TODO: This is a workaround for empty lists
+                        return PacketIdent::PacketType(0);
+                    }
+                    if x.contains(":") {
+                        let parts: Vec<&str> = x.split(':').collect();
+                        assert!(parts.len() == 2);
+                        let supertype = parts[0].parse().expect("Couldn't parse supertype");
+                        let subtype = parts[1].parse().expect("Couldn't parse subtype");
+                        PacketIdent::WithSubtype((supertype, subtype))
+                    } else {
+                        PacketIdent::PacketType(x.parse().expect("Couldn't parse u32"))
+                    }
+                    //x.parse().expect("Couldn't parse exclude packet")
+                }).collect();
+                if exclude_packets.len() == 0 && exclude_packets[0] == PacketIdent::PacketType(0) { // TODO: This is a workaround for empty lists
+                    exclude_packets = vec!();
+                }
+
                 if !matches.is_present("no-meta") {
                     println!(
                         "{}",
                         serde_json::to_string(&meta).expect("Couldn't JSON-format metadata")
                     );
                 }
+                let speed: u32 = matches.value_of("speed").map(|x| x.parse().expect("Couldn't parse speed! Must specify an integer")).unwrap_or(0);
+                let start_tm = std::time::Instant::now();
                 for packet in packets {
                     let superfilter: Option<u32> =
                         matches.value_of("filter-super").map(|x| x.parse().unwrap());
@@ -391,8 +461,38 @@ fn main() {
                             }
                         },
                     };
+                    /*if exclude_packets.len() > 0 {
+                        let packet_type = if packet.packet_type == 7 || packet.packet_type == 8 {
+                            match &packet.payload {
+                                PacketType::Entity(p) => {
+                                    PacketIdent::WithSubtype((p.supertype, p.subtype))
+                                }
+                                _ => {
+                                    // Skip known packets
+                                    continue;
+                                }
+                            }
+                        } else {
+                            PacketIdent::PacketType(packet.packet_type)
+                        };
+                        if exclude_packets.contains(&packet_type) {
+                            continue;
+                        }
+                    }*/
                     let s = serde_json::to_string(&packet)
                         .expect("Couldn't JSON-format serialize packet");
+                    if speed > 0 {
+                        let current_tm = start_tm.elapsed().as_secs_f32() * speed as f32;
+                        if packet.clock > current_tm {
+                            let millis = (packet.clock - current_tm) * 1000.0;
+                            //println!("Sleeping for {}", millis);
+                            std::thread::sleep(std::time::Duration::from_millis(millis as u64));
+                        }
+                    }
+                    if timestamps.len() > 0 && timestamps[0] < packet.clock as u32 {
+                        println!("{{\"clock\":{},\"timestamp\":1}}", packet.clock);
+                        timestamps.remove(0);
+                    }
                     println!("{}", s);
                 }
             },

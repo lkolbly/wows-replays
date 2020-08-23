@@ -40,7 +40,7 @@ which indicates that the recipient `604965` received 1254 units of damage from `
 
 The `wowsreplay` format has a majority of packets under the `7` and `8` packet types, which I refer to as "Entity" packets. These packets have not yet been decoded (their packet ID is unknown), although it is known that they contain an entity ID (that's all that's known about them).
 
-Some packets will appear as "Invalid" packets, these are packets for which the packet ID is known, but for some reason the parser decided it didn't know what to do with the packet.
+Some packets will appear as "Invalid" packets, these are packets for which the packet ID is known, but for some reason the parser decided it didn't know what to do with the packet. If you find one of these, please feel free to copy the packet into a new issue!
 
 Trace Utility
 =============
@@ -56,9 +56,34 @@ The following game versions are currently supported:
 - 0.9.6 (and .1)
 - 0.9.7
 
-The version policy for this component is forward-looking: After game version X is released, I won't work very hard to decode new packets from version X-1 and below. To the extent practical, though, support for older versions will be maintained.
+The version policy for this component is forward-looking: After game version X is released, I won't work very hard to decode new packets from version X-1 and below. To the extent practical, though, support for older versions will be maintained - but it is not guaranteed that any version other than the "current" will work.
+
+Packet Support
+==============
+
+The following packets are parsed at least partially:
+- The initial "Setup" packet which enumerates the players, their ships, camo configuration, etc. is partially decoded.
+ - The general structure is partially decoded. Most fields are not decoded.
+- Position and PlayerOrientation: The position of other ships and of the player and of the camera.
+ - Some fields are not fully decoded.
+- Chat: Emitted whenever a player sends a chat message.
+- DamageReceived: Emitted whenever damage is dealt to a ship.
+- ArtilleryHit: Emitted whenever either the player's guns hit a ship or whenever the player's ship is hit by shells. This packet has many unknown fields.
+- Banner: Emitted when the player receives a banner.
+
+Packet wishlist
+===============
+
+The following information is not yet extracted from replays, but is information that is known to exist in the replay file:
+- Torpedoes.
+- Planes.
+- Ship visibility/hidden status (and the player's "detected" status)
+- Ship destruction.
+- Incapacitation type.
+- Consumable usage.
+- Smoke.
 
 Contributing
 ============
 
-Feel free to open issues or PRs if you find any bugs or want to be able to parse any particular packets from your replay files. This project is in Rust, but the `dump` command can generate JSON data for consumption in any language, so if you end up writing a packet parser for a new packet in another language please open an issue and I can add it to the Rust code.
+Feel free to open issues or PRs if you find any bugs or want to be able to parse any particular packets from your replay files. This project is in Rust, but the `dump` command can generate JSON data for consumption in any language, so if you end up writing a packet parser for a new packet in another language please open an issue and I can port it to the Rust code.
