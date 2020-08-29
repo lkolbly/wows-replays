@@ -104,6 +104,28 @@ pub struct ArtilleryHitPacket<'a> {
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize)]
+pub enum DeathCause {
+    Secondaries,
+    Artillery,
+    Fire,
+    Flooding,
+    Torpedo,
+    DiveBomber,
+    AerialRocket,
+    AerialTorpedo,
+    Detonation,
+    Ramming,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ShipDestroyedPacket {
+    pub victim: u32,
+    pub killer: u32,
+    pub death_cause: DeathCause,
+    pub unknown: u32,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize)]
 pub enum Banner {
     PlaneShotDown,
     Incapacitation,
@@ -154,6 +176,7 @@ pub enum PacketType<'a> {
     PlayerOrientation(PlayerOrientationPacket),
     Type8_79(Vec<(u32, u32)>),
     Setup(SetupPacket),
+    ShipDestroyed(ShipDestroyedPacket),
     Unknown(&'a [u8]),
 
     /// These are packets which we thought we understood, but couldn't parse
@@ -167,6 +190,40 @@ pub struct Packet<'a> {
     pub clock: f32,
     pub payload: PacketType<'a>,
     pub raw: &'a [u8],
+}
+
+fn parse_ship_destroyed_packet(
+    _entity_id: u32,
+    _supertype: u32,
+    _subtype: u32,
+    payload: &[u8],
+) -> IResult<&[u8], PacketType> {
+    let (i, victim) = le_u32(payload)?;
+    let (i, killer) = le_u32(i)?;
+    let (i, unknown) = le_u32(i)?;
+    let death_cause = match unknown {
+        2 => DeathCause::Secondaries,
+        3 => DeathCause::Torpedo,
+        4 => DeathCause::DiveBomber,
+        5 => DeathCause::AerialTorpedo,
+        6 => DeathCause::Fire,
+        7 => DeathCause::Ramming,
+        9 => DeathCause::Flooding,
+        14 => DeathCause::AerialRocket,
+        15 => DeathCause::Detonation,
+        17 => DeathCause::Artillery,
+        18 => DeathCause::Artillery,
+        19 => DeathCause::Artillery,
+        _ => {
+            panic!(format!("Found unknown death_cause {}", unknown));
+        }
+    };
+    Ok((
+        i,
+        PacketType::ShipDestroyed(ShipDestroyedPacket {
+            victim, killer, death_cause, unknown
+        })
+    ))
 }
 
 fn parse_player_orientation_packet(i: &[u8]) -> IResult<&[u8], PacketType> {
@@ -552,6 +609,7 @@ fn lookup_entity_fn(
             (0x8, 0x64) => parse_artillery_hit_packet,
             (0x8, 0xc) => parse_banner_packet,
             (0x8, 0x35) => parse_damage_received_packet, // TODO: This needs better verification
+            (0x8, 0x53) => parse_ship_destroyed_packet,
             _ => parse_unknown_entity_packet,
         }
     };

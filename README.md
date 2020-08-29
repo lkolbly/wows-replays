@@ -70,6 +70,7 @@ The following packets are parsed at least partially:
 - DamageReceived: Emitted whenever damage is dealt to a ship.
 - ArtilleryHit: Emitted whenever either the player's guns hit a ship or whenever the player's ship is hit by shells. This packet has many unknown fields.
 - Banner: Emitted when the player receives a banner.
+- ShipDestroyed: Emitted when a ship kills another, contains both victim and perpetrator IDs as well as cause (e.g. artillery, fire, ramming).
 
 Packet wishlist
 ===============
@@ -78,7 +79,6 @@ The following information is not yet extracted from replays, but is information 
 - Torpedoes.
 - Planes.
 - Ship visibility/hidden status (and the player's "detected" status)
-- Ship destruction.
 - Incapacitation type.
 - Consumable usage.
 - Smoke.
