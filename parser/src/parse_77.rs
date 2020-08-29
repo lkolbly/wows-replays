@@ -329,17 +329,17 @@ fn parse_section2_array(
 
 #[derive(Debug, Serialize)]
 pub struct SetupPlayerInfo {
-    username: String,
-    clan: String,
+    pub username: String,
+    pub clan: String,
 
     /// The ID used to reference the ship in this game
-    shipid: u32,
+    pub shipid: u32,
 
     /// The ID used to reference the player/camera (?) in this game
-    playerid: u32,
+    pub playerid: u32,
 
     /// The ID of the ship type the player is using
-    shiptypeid: u32,
+    pub shiptypeid: u32,
 }
 
 fn parse_section2(i: &[u8]) -> IResult<&[u8], Vec<SetupPlayerInfo>> {
@@ -459,7 +459,7 @@ fn parse_sections(i: &[u8]) -> IResult<&[u8], Vec<SetupPlayerInfo>> {
 
 #[derive(Debug, Serialize)]
 pub struct SetupPacket {
-    players: Vec<SetupPlayerInfo>,
+    pub players: Vec<SetupPlayerInfo>,
 }
 
 pub fn parse_77(i: &[u8]) -> IResult<&[u8], SetupPacket> {
