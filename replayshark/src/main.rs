@@ -437,6 +437,10 @@ fn main() {
                 let speed: u32 = matches.value_of("speed").map(|x| x.parse().expect("Couldn't parse speed! Must specify an integer")).unwrap_or(0);
                 let start_tm = std::time::Instant::now();
                 for packet in packets {
+                    if timestamps.len() > 0 && timestamps[0] < packet.clock as u32 {
+                        println!("{{\"clock\":{},\"timestamp\":1}}", packet.clock);
+                        timestamps.remove(0);
+                    }
                     let superfilter: Option<u32> =
                         matches.value_of("filter-super").map(|x| x.parse().unwrap());
                     let subfilter: Option<u32> =
@@ -488,10 +492,6 @@ fn main() {
                             //println!("Sleeping for {}", millis);
                             std::thread::sleep(std::time::Duration::from_millis(millis as u64));
                         }
-                    }
-                    if timestamps.len() > 0 && timestamps[0] < packet.clock as u32 {
-                        println!("{{\"clock\":{},\"timestamp\":1}}", packet.clock);
-                        timestamps.remove(0);
                     }
                     println!("{}", s);
                 }
