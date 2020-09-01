@@ -103,6 +103,39 @@ pub struct ArtilleryHitPacket<'a> {
     pub raw: &'a [u8],
 }
 
+#[derive(Debug, Clone, Copy, Serialize)]
+pub enum VoiceLine {
+    IntelRequired,
+    FairWinds,
+    Wilco,
+    Negative,
+    WellDone,
+    Curses,
+    UsingRadar,
+    UsingHydroSearch,
+    DefendTheBase, // TODO: ...except when it's "thank you"?
+    SetSmokeScreen,
+    ProvideAntiAircraft,
+    RequestingSupport(Option<u32>),
+    Retreat(Option<u32>),
+
+    /// Fields are (letter,number) and zero-indexed. e.g. F2 is (5,1)
+    AttentionToSquare((u32, u32)),
+
+    /// Field is the ID of the target
+    ConcentrateFire(u32),
+}
+
+#[derive(Debug, Serialize)]
+pub struct VoiceLinePacket {
+    pub sender: u32,
+
+    /// Voice lines are either to everyone or to the team
+    pub is_global: bool,
+
+    pub message: VoiceLine,
+}
+
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize)]
 pub enum DeathCause {
     Secondaries,
@@ -177,6 +210,7 @@ pub enum PacketType<'a> {
     Type8_79(Vec<(u32, u32)>),
     Setup(SetupPacket),
     ShipDestroyed(ShipDestroyedPacket),
+    VoiceLine(VoiceLinePacket),
     Unknown(&'a [u8]),
 
     /// These are packets which we thought we understood, but couldn't parse
@@ -190,6 +224,54 @@ pub struct Packet<'a> {
     pub clock: f32,
     pub payload: PacketType<'a>,
     pub raw: &'a [u8],
+}
+
+fn parse_voiceline_packet(
+    _entity_id: u32,
+    _supertype: u32,
+    _subtype: u32,
+    payload: &[u8],
+) -> IResult<&[u8], PacketType> {
+    let (i, audience) = be_u8(payload)?;
+    //assert!(audience == 0); // What do the other audiences mean?
+    let (i, sender) = le_u32(i)?;
+    let (i, line) = be_u8(i)?;
+    let (i, a) = le_u32(i)?;
+    let (i, b) = le_u32(i)?;
+    let (i, c) = le_u32(i)?;
+    let is_global = match audience {
+        0 => false,
+        1 => true,
+        _ => {
+            panic!(format!("Got unknown audience {} sender=0x{:x} line={} a={:x} b={:x} c={:x}", audience, sender, line, a, b, c));
+        }
+    };
+    let message = match line {
+        1 => VoiceLine::AttentionToSquare((a, b)),
+        2 => VoiceLine::ConcentrateFire(b),
+        3 => VoiceLine::RequestingSupport(None),
+        5 => VoiceLine::Wilco,
+        6 => VoiceLine::Negative,
+        7 => VoiceLine::WellDone, // TODO: Find the corresponding field
+        8 => VoiceLine::FairWinds,
+        9 => VoiceLine::Curses,
+        10 => VoiceLine::DefendTheBase,
+        11 => VoiceLine::ProvideAntiAircraft,
+        12 => VoiceLine::Retreat(if b != 0 { Some(b) } else { None }),
+        13 => VoiceLine::IntelRequired,
+        14 => VoiceLine::SetSmokeScreen,
+        15 => VoiceLine::UsingRadar,
+        16 => VoiceLine::UsingHydroSearch,
+        _ => {
+            panic!(format!("Unknown voice line {} a={:x} b={:x} c={:x}!", line, a, b, c));
+        }
+    };
+    Ok((
+        i,
+        PacketType::VoiceLine(VoiceLinePacket {
+            sender, is_global, message,
+        })
+    ))
 }
 
 fn parse_ship_destroyed_packet(
@@ -610,6 +692,7 @@ fn lookup_entity_fn(
             (0x8, 0xc) => parse_banner_packet,
             (0x8, 0x35) => parse_damage_received_packet, // TODO: This needs better verification
             (0x8, 0x53) => parse_ship_destroyed_packet,
+            (0x8, 0x58) => parse_voiceline_packet,
             _ => parse_unknown_entity_packet,
         }
     };
