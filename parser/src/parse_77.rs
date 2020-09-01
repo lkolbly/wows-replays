@@ -20,8 +20,8 @@ use crate::error::*;
 // 0x7d is... followed by nothing (some sort of framing structure?)
 // 0x80 is... followed by nothing (some sort of framing structure?)
 // 0x88/0x89 are... followed by nothing (boolean true/false?)
-#[derive(Debug, PartialEq, Clone)]
-enum Type77 {
+#[derive(Debug, PartialEq, Clone, Serialize)]
+pub enum Type77 {
     /// The packet appears to be divided into sections, of some sort
     StartSection(u8),
 
@@ -340,6 +340,15 @@ pub struct SetupPlayerInfo {
 
     /// The ID of the ship type the player is using
     pub shiptypeid: u32,
+
+    /// All players on a division will have the same Some(x) as the division ID
+    pub divisionid: Option<u32>,
+
+    /// True if the player is on the opposing team, false otherwise
+    pub is_opposing_team: bool,
+
+    /// The raw data extracted
+    pub raw: HashMap<u8, Vec<Type77>>,
 }
 
 fn parse_section2(i: &[u8]) -> IResult<&[u8], Vec<SetupPlayerInfo>> {
@@ -427,12 +436,30 @@ fn parse_section2(i: &[u8]) -> IResult<&[u8], Vec<SetupPlayerInfo>> {
                 let shiptypeid = shiptypeid
                     .parse::<u32>()
                     .expect("Could not parse shiptypeid field");
+
+                let observed_teamid = match &player.get(&32).expect("Couldn't find observed team ID field")[0] {
+                    Type77::ObjectKey(n) => *n,
+                    _ => {
+                        panic!("Observed team ID was not an ObjectKey");
+                    }
+                };
+                // Note: Key 26 has the same information, apparently
+                let divisionid = match &player.get(&24).expect("Couldn't find division ID field")[0] {
+                    Type77::ObjectKey(0) => None,
+                    Type77::U32(n) => Some(*n),
+                    _ => {
+                        panic!("Unknown division ID");
+                    }
+                };
                 SetupPlayerInfo {
                     username,
                     clan,
                     shipid,
                     playerid,
                     shiptypeid,
+                    divisionid,
+                    is_opposing_team: observed_teamid == 1,
+                    raw: player,
                 }
             })
             .collect(),
