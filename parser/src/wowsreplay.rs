@@ -1,14 +1,9 @@
-use std::io::Read;
-//use nom::{bytes::complete::take, bytes::complete::tag, named, do_parse, take, tag, number::complete::be_u16, number::complete::le_u16, number::complete::be_u8, alt, cond, number::complete::be_u24, char, opt, one_of, take_while, length_data, many1, complete, number::complete::le_u32, number::complete::le_f32, multi::many0, number::complete::be_u32, multi::count};
+use crypto::symmetriccipher::BlockDecryptor;
 use nom::bytes::complete::take;
 use nom::number::complete::le_u32;
 use serde_derive::{Deserialize, Serialize};
-//use thiserror::Error;
 use std::collections::HashMap;
-//use std::convert::TryInto;
-use crypto::symmetriccipher::BlockDecryptor;
-//use plotters::prelude::*;
-//use image::{imageops::FilterType, ImageFormat};
+use std::io::Read;
 
 use crate::error::*;
 

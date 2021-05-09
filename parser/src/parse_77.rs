@@ -437,14 +437,18 @@ fn parse_section2(i: &[u8]) -> IResult<&[u8], Vec<SetupPlayerInfo>> {
                     .parse::<u32>()
                     .expect("Could not parse shiptypeid field");
 
-                let observed_teamid = match &player.get(&32).expect("Couldn't find observed team ID field")[0] {
+                let observed_teamid = match &player
+                    .get(&32)
+                    .expect("Couldn't find observed team ID field")[0]
+                {
                     Type77::ObjectKey(n) => *n,
                     _ => {
                         panic!("Observed team ID was not an ObjectKey");
                     }
                 };
                 // Note: Key 26 has the same information, apparently
-                let divisionid = match &player.get(&24).expect("Couldn't find division ID field")[0] {
+                let divisionid = match &player.get(&24).expect("Couldn't find division ID field")[0]
+                {
                     Type77::ObjectKey(0) => None,
                     Type77::U32(n) => Some(*n),
                     _ => {

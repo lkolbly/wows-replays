@@ -345,19 +345,19 @@ fn main() {
                     Arg::with_name("exclude-subtypes")
                         .long("exclude-subtypes")
                         .help("A comma-delimited list of Entity subtypes to exclude")
-                        .takes_value(true)
+                        .takes_value(true),
                 )
                 .arg(
                     Arg::with_name("timestamps")
                         .long("timestamps")
                         .help("A comma-delimited list of timestamps to highlight in the output")
-                        .takes_value(true)
+                        .takes_value(true),
                 )
                 .arg(
                     Arg::with_name("timestamp-offset")
                         .long("timestamp-offset")
                         .help("Number of seconds to subtract from the timestamps")
-                        .takes_value(true)
+                        .takes_value(true),
                 )
                 .arg(
                     Arg::with_name("no-meta")
@@ -384,22 +384,32 @@ fn main() {
             },
             &std::path::PathBuf::from(input),
             |_, meta, packets| {
+                let timestamp_offset: u32 = matches
+                    .value_of("timestamp-offset")
+                    .unwrap_or("0")
+                    .parse()
+                    .expect("Couldn't parse timestamp-offset as float");
 
-                let timestamp_offset: u32 = matches.value_of("timestamp-offset").unwrap_or("0").parse().expect("Couldn't parse timestamp-offset as float");
-
-                let mut timestamps: Vec<u32> = matches.value_of("timestamps").unwrap_or("").split(',').map(|x| {
-                    if x.len() == 0 { // TODO: This is a workaround for empty
-                        return 0;
-                    }
-                    let parts: Vec<&str> = x.split(':').collect();
-                    assert!(parts.len() == 2);
-                    let m: u32 = parts[0].parse().unwrap();
-                    let s: u32 = parts[1].parse().unwrap();
-                    (m * 60 + s) - timestamp_offset
-                }).collect();
+                let mut timestamps: Vec<u32> = matches
+                    .value_of("timestamps")
+                    .unwrap_or("")
+                    .split(',')
+                    .map(|x| {
+                        if x.len() == 0 {
+                            // TODO: This is a workaround for empty
+                            return 0;
+                        }
+                        let parts: Vec<&str> = x.split(':').collect();
+                        assert!(parts.len() == 2);
+                        let m: u32 = parts[0].parse().unwrap();
+                        let s: u32 = parts[1].parse().unwrap();
+                        (m * 60 + s) - timestamp_offset
+                    })
+                    .collect();
                 timestamps.sort();
-                if timestamps.len() == 1 && timestamps[0] == 0 { // TODO: Workaround for empty timestamps specifier
-                    timestamps = vec!();
+                if timestamps.len() == 1 && timestamps[0] == 0 {
+                    // TODO: Workaround for empty timestamps specifier
+                    timestamps = vec![];
                 }
                 //println!("{:?}", timestamps);
 
@@ -409,23 +419,30 @@ fn main() {
                     WithSubtype((u32, u32)),
                 };
 
-                let mut exclude_packets: Vec<PacketIdent> = matches.value_of("exclude-subtypes").unwrap_or("").split(',').map(|x| {
-                    if x.len() == 0 { // TODO: This is a workaround for empty lists
-                        return PacketIdent::PacketType(0);
-                    }
-                    if x.contains(":") {
-                        let parts: Vec<&str> = x.split(':').collect();
-                        assert!(parts.len() == 2);
-                        let supertype = parts[0].parse().expect("Couldn't parse supertype");
-                        let subtype = parts[1].parse().expect("Couldn't parse subtype");
-                        PacketIdent::WithSubtype((supertype, subtype))
-                    } else {
-                        PacketIdent::PacketType(x.parse().expect("Couldn't parse u32"))
-                    }
-                    //x.parse().expect("Couldn't parse exclude packet")
-                }).collect();
-                if exclude_packets.len() == 0 && exclude_packets[0] == PacketIdent::PacketType(0) { // TODO: This is a workaround for empty lists
-                    exclude_packets = vec!();
+                let mut exclude_packets: Vec<PacketIdent> = matches
+                    .value_of("exclude-subtypes")
+                    .unwrap_or("")
+                    .split(',')
+                    .map(|x| {
+                        if x.len() == 0 {
+                            // TODO: This is a workaround for empty lists
+                            return PacketIdent::PacketType(0);
+                        }
+                        if x.contains(":") {
+                            let parts: Vec<&str> = x.split(':').collect();
+                            assert!(parts.len() == 2);
+                            let supertype = parts[0].parse().expect("Couldn't parse supertype");
+                            let subtype = parts[1].parse().expect("Couldn't parse subtype");
+                            PacketIdent::WithSubtype((supertype, subtype))
+                        } else {
+                            PacketIdent::PacketType(x.parse().expect("Couldn't parse u32"))
+                        }
+                        //x.parse().expect("Couldn't parse exclude packet")
+                    })
+                    .collect();
+                if exclude_packets.len() == 0 && exclude_packets[0] == PacketIdent::PacketType(0) {
+                    // TODO: This is a workaround for empty lists
+                    exclude_packets = vec![];
                 }
 
                 if !matches.is_present("no-meta") {
@@ -434,7 +451,13 @@ fn main() {
                         serde_json::to_string(&meta).expect("Couldn't JSON-format metadata")
                     );
                 }
-                let speed: u32 = matches.value_of("speed").map(|x| x.parse().expect("Couldn't parse speed! Must specify an integer")).unwrap_or(0);
+                let speed: u32 = matches
+                    .value_of("speed")
+                    .map(|x| {
+                        x.parse()
+                            .expect("Couldn't parse speed! Must specify an integer")
+                    })
+                    .unwrap_or(0);
                 let start_tm = std::time::Instant::now();
                 for packet in packets {
                     if timestamps.len() > 0 && timestamps[0] < packet.clock as u32 {

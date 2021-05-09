@@ -243,7 +243,10 @@ fn parse_voiceline_packet(
         0 => false,
         1 => true,
         _ => {
-            panic!(format!("Got unknown audience {} sender=0x{:x} line={} a={:x} b={:x} c={:x}", audience, sender, line, a, b, c));
+            panic!(format!(
+                "Got unknown audience {} sender=0x{:x} line={} a={:x} b={:x} c={:x}",
+                audience, sender, line, a, b, c
+            ));
         }
     };
     let message = match line {
@@ -263,14 +266,19 @@ fn parse_voiceline_packet(
         15 => VoiceLine::UsingRadar,
         16 => VoiceLine::UsingHydroSearch,
         _ => {
-            panic!(format!("Unknown voice line {} a={:x} b={:x} c={:x}!", line, a, b, c));
+            panic!(format!(
+                "Unknown voice line {} a={:x} b={:x} c={:x}!",
+                line, a, b, c
+            ));
         }
     };
     Ok((
         i,
         PacketType::VoiceLine(VoiceLinePacket {
-            sender, is_global, message,
-        })
+            sender,
+            is_global,
+            message,
+        }),
     ))
 }
 
@@ -303,8 +311,11 @@ fn parse_ship_destroyed_packet(
     Ok((
         i,
         PacketType::ShipDestroyed(ShipDestroyedPacket {
-            victim, killer, death_cause, unknown
-        })
+            victim,
+            killer,
+            death_cause,
+            unknown,
+        }),
     ))
 }
 
