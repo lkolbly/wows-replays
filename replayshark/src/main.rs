@@ -247,18 +247,27 @@ fn parse_replay<F: FnMut(u32, &ReplayMeta, &[Packet])>(
     replay: &std::path::PathBuf,
     mut cb: F,
 ) -> Result<(), wows_replays::ErrorKind> {
-    let replay_file = ReplayFile::from_file(replay);
+    let replay_file = ReplayFile::from_file(replay)?;
 
     let version_parts: Vec<_> = replay_file.meta.clientVersionFromExe.split(",").collect();
     assert!(version_parts.len() == 4);
     let build: u32 = version_parts[3].parse().unwrap();
 
     // Parse packets
-    let packets = parse_packets(build, &replay_file.packet_data)?;
+    match parse_packets(build, &replay_file.packet_data) {
+        Ok(packets) => {
+            cb(build, &replay_file.meta, &packets);
+            Ok(())
+        }
+        Err(e) => {
+            cb(build, &replay_file.meta, &vec![]);
+            Err(e)
+        }
+    }
 
-    cb(build, &replay_file.meta, &packets);
+    //cb(build, &replay_file.meta, &packets);
 
-    Ok(())
+    //Ok(())
 }
 
 fn parse_replay_force_version<F: FnMut(u32, &ReplayMeta, &[Packet])>(
@@ -266,7 +275,7 @@ fn parse_replay_force_version<F: FnMut(u32, &ReplayMeta, &[Packet])>(
     replay: &std::path::PathBuf,
     mut cb: F,
 ) -> Result<(), wows_replays::ErrorKind> {
-    let replay_file = ReplayFile::from_file(replay);
+    let replay_file = ReplayFile::from_file(replay)?;
 
     let version_parts: Vec<_> = replay_file.meta.clientVersionFromExe.split(",").collect();
     assert!(version_parts.len() == 4);
@@ -278,6 +287,13 @@ fn parse_replay_force_version<F: FnMut(u32, &ReplayMeta, &[Packet])>(
     cb(build, &replay_file.meta, &packets);
 
     Ok(())
+}
+
+fn truncate_string(s: &str, length: usize) -> &str {
+    match s.char_indices().nth(length) {
+        None => s,
+        Some((idx, _)) => &s[..idx],
+    }
 }
 
 fn main() {
@@ -369,6 +385,11 @@ fn main() {
                         .long("speed")
                         .help("Play back the file at the given speed multiplier")
                         .takes_value(true),
+                )
+                .arg(
+                    Arg::with_name("xxd")
+                        .long("xxd")
+                        .help("Print out the packets as xxd-formatted binary dumps"),
                 )
                 .arg(replay_arg.clone()),
         )
@@ -506,8 +527,6 @@ fn main() {
                             continue;
                         }
                     }*/
-                    let s = serde_json::to_string(&packet)
-                        .expect("Couldn't JSON-format serialize packet");
                     if speed > 0 {
                         let current_tm = start_tm.elapsed().as_secs_f32() * speed as f32;
                         if packet.clock > current_tm {
@@ -516,7 +535,24 @@ fn main() {
                             std::thread::sleep(std::time::Duration::from_millis(millis as u64));
                         }
                     }
-                    println!("{}", s);
+                    if matches.is_present("xxd") {
+                        println!("clock={} type=0x{:x}", packet.clock, packet.packet_type);
+                        hexdump::hexdump(packet.raw);
+                        match &packet.payload {
+                            PacketType::Unknown(_) => {
+                                // Wasn't parsed, don't print the serialization
+                            }
+                            payload => {
+                                println!("Deserialized as:");
+                                println!("{:?}", payload);
+                            }
+                        }
+                        println!();
+                    } else {
+                        let s = serde_json::to_string(&packet)
+                            .expect("Couldn't JSON-format serialize packet");
+                        println!("{}", s);
+                    }
                 }
             },
         )
@@ -530,6 +566,7 @@ fn main() {
             println!("Map: {}", meta.mapDisplayName);
             println!("Vehicle: {}", meta.playerVehicle);
             println!("Game mode: {} {}", meta.name, meta.gameLogic);
+            println!("Game version: {}", meta.clientVersionFromExe);
             println!();
             print_summary(packets);
         })
@@ -555,40 +592,71 @@ fn main() {
         let mut other_failures = 0;
         let mut successes = 0;
         let mut total = 0;
+        let mut invalid_versions = HashMap::new();
         for replay in matches.values_of("REPLAYS").unwrap() {
-            total += 1;
-            match parse_replay(&std::path::PathBuf::from(replay), |_, _, packets| {
-                let invalid_packets: Vec<_> = packets
-                    .iter()
-                    .filter_map(|packet| match &packet.payload {
-                        PacketType::Invalid(p) => Some(p),
-                        _ => None,
-                    })
-                    .collect();
-                if invalid_packets.len() > 0 {
-                    other_failures += 1;
-                    println!(
-                        "Failed to parse {} of {} packets in {}",
-                        invalid_packets.len(),
-                        packets.len(),
-                        replay
-                    );
-                } else {
-                    println!("Successfully parsed {}", replay);
+            for entry in walkdir::WalkDir::new(replay) {
+                let entry = entry.expect("Error unwrapping entry");
+                if !entry.path().is_file() {
+                    continue;
                 }
-            }) {
-                Ok(_) => {
-                    successes += 1;
+                let replay = entry.path().to_path_buf();
+                let filename = replay.file_name().unwrap().to_str().unwrap();
+                if filename.contains("8654fea76d1a758ea40d") {
+                    // This one fails to parse the initial bit
+                    continue;
                 }
-                Err(ErrorKind::UnsupportedReplayVersion(n)) => {
-                    version_failures += 1;
-                    println!("Unsupported version {} for {}", n, replay);
+                if filename.contains("537e4d5f3b01e17ac02d")
+                    || filename.contains("6a07f3222eca0cf9a585")
+                    || filename.contains("82f2cf97f44dc188bf3b")
+                    || filename.contains("ac054684b5450f908f1f")
+                {
+                    // These fail due to unknown death cause 10
+                    continue;
                 }
-                Err(e) => {
-                    other_failures += 1;
-                    println!("Error parsing {}: {:?}", replay, e);
+                if filename.contains("a71c42aabe17848bf618")
+                    || filename.contains("cb5b3f96018265ef8dbb")
+                {
+                    // Ship ID was not a U32
+                    continue;
                 }
-            };
+                print!("Parsing {}: ", truncate_string(filename, 20));
+                total += 1;
+                match parse_replay(&replay, |_, _, packets| {
+                    let invalid_packets: Vec<_> = packets
+                        .iter()
+                        .filter_map(|packet| match &packet.payload {
+                            PacketType::Invalid(p) => Some(p),
+                            _ => None,
+                        })
+                        .collect();
+                    if invalid_packets.len() > 0 {
+                        other_failures += 1;
+                        println!(
+                            "Failed to parse {} of {} packets",
+                            invalid_packets.len(),
+                            packets.len(),
+                        );
+                    } else {
+                        println!("Successful!");
+                    }
+                }) {
+                    Ok(_) => {
+                        successes += 1;
+                    }
+                    Err(ErrorKind::UnsupportedReplayVersion(n)) => {
+                        version_failures += 1;
+                        if !invalid_versions.contains_key(&n) {
+                            invalid_versions.insert(n, 0);
+                        }
+                        *invalid_versions.get_mut(&n).unwrap() += 1;
+                        println!("Unsupported version {}", n,);
+                    }
+                    Err(e) => {
+                        other_failures += 1;
+                        println!("Parse error: {:?}", e);
+                    }
+                };
+            }
         }
         println!();
         println!("Found {} replay files", total);
@@ -598,14 +666,19 @@ fn main() {
             100. * successes as f64 / total as f64
         );
         println!(
+            "  - {} ({:.0}%) had parse errors",
+            other_failures,
+            100. * other_failures as f64 / successes as f64
+        );
+        println!(
             "- {} ({:.0}%) are an unrecognized version",
             version_failures,
             100. * version_failures as f64 / total as f64
         );
-        println!(
-            "- {} ({:.0}%) had parse errors",
-            other_failures,
-            100. * other_failures as f64 / total as f64
-        );
+        if invalid_versions.len() > 0 {
+            for (k, v) in invalid_versions.iter() {
+                println!("  - Version {} appeared {} times", k, v);
+            }
+        }
     }
 }

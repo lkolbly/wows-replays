@@ -712,6 +712,21 @@ fn lookup_entity_fn(
     let fn_2697511 = fn_2666186; // 0.9.6.1
     let fn_2744482 = fn_2697511; // 0.9.7.0
     let fn_2832630 = fn_2744482; // 0.9.8
+    let fn_3747819 = || {
+        // 0.10.3
+        match (supertype, subtype) {
+            (0x8, 0x78) => parse_chat_packet,
+            /*(0x8, 0x79) => parse_setup_packet,
+            (0x8, 0x3e) | (0x8, 0x3f) => parse_timing_packet,
+            (0x8, 0x7b) => parse_8_79_packet,
+            (0x8, 0x64) => parse_artillery_hit_packet,
+            (0x8, 0xc) => parse_banner_packet,
+            (0x8, 0x35) => parse_damage_received_packet, // TODO: This needs better verification
+            (0x8, 0x53) => parse_ship_destroyed_packet,
+            (0x8, 0x58) => parse_voiceline_packet,*/
+            _ => parse_unknown_entity_packet,
+        }
+    };
 
     match version {
         0 => Some(fn_0()),
@@ -722,6 +737,7 @@ fn lookup_entity_fn(
         2697511 => Some(fn_2697511()),
         2744482 => Some(fn_2744482()),
         2832630 => Some(fn_2832630()),
+        3747819 => Some(fn_3747819()),
         _ => {
             //Err(error_from_kind(ErrorKind::UnsupportedReplayVersion(version)))
             None

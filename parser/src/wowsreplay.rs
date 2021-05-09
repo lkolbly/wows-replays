@@ -92,14 +92,14 @@ pub struct ReplayFile {
 }
 
 impl ReplayFile {
-    pub fn from_file(replay: &std::path::PathBuf) -> ReplayFile {
+    pub fn from_file(replay: &std::path::PathBuf) -> Result<ReplayFile, ErrorKind> {
         let mut f = std::fs::File::open(replay).unwrap();
         let mut contents = vec![];
         f.read_to_end(&mut contents).unwrap();
 
         //println!("{:x}", contents[0]);
 
-        let (remaining, result) = replay_format(&contents).unwrap();
+        let (remaining, result) = replay_format(&contents)?;
         //let meta_str = std::str::from_utf8(result.meta).unwrap();
         //println!("{:?}", meta_str);
 
@@ -136,9 +136,9 @@ impl ReplayFile {
         let mut contents = vec![];
         deflater.read_to_end(&mut contents).unwrap();
 
-        ReplayFile {
+        Ok(ReplayFile {
             meta: result.meta,
             packet_data: contents,
-        }
+        })
     }
 }
