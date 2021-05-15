@@ -6,7 +6,9 @@ use plotters::prelude::*;
 use std::collections::HashMap;
 use std::convert::TryInto;
 
-use wows_replays::{parse_packets, Banner, ErrorKind, Packet, PacketType, ReplayFile, ReplayMeta};
+use wows_replays::{
+    parse_packets, parse_scripts, Banner, ErrorKind, Packet, PacketType, ReplayFile, ReplayMeta,
+};
 
 fn extract_banners(packets: &[Packet]) -> HashMap<Banner, usize> {
     packets
@@ -297,6 +299,32 @@ fn truncate_string(s: &str, length: usize) -> &str {
 }
 
 fn main() {
+    let specs = parse_scripts(std::path::PathBuf::from("./wows-scripts"));
+
+    let replay_file = ReplayFile::from_file(&std::path::PathBuf::from(
+        "test/replays/version-3747819.wowsreplay",
+    ))
+    .unwrap();
+
+    let version_parts: Vec<_> = replay_file.meta.clientVersionFromExe.split(",").collect();
+    assert!(version_parts.len() == 4);
+    let build: u32 = version_parts[3].parse().unwrap();
+
+    // Parse packets
+    let mut p = wows_replays::packet2::Parser::new(specs);
+    match p.parse_packets(&replay_file.packet_data) {
+        Ok(packets) => {
+            //cb(build, &replay_file.meta, &packets);
+            for packet in packets.iter() {
+                println!("{:?}", packet);
+            }
+        }
+        Err(e) => {
+            println!("Got error parsing!");
+        }
+    }
+    return;
+
     let replay_arg = Arg::with_name("REPLAY")
         .help("The replay file to use")
         .required(true)
