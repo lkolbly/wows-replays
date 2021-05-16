@@ -441,7 +441,7 @@ impl Parser {
     fn parse_cell_player_create<'a>(&self, i: &'a [u8]) -> IResult<&'a [u8], PacketType<'a>> {
         let (i, entity_id) = le_u32(i)?;
         let (i, space_id) = le_u32(i)?;
-        let (i, unknown) = le_u16(i)?;
+        //let (i, unknown) = le_u16(i)?;
         let (i, vehicle_id) = le_u32(i)?;
         let (i, posx) = le_f32(i)?;
         let (i, posy) = le_f32(i)?;
@@ -449,7 +449,46 @@ impl Parser {
         let (i, dirx) = le_f32(i)?;
         let (i, diry) = le_f32(i)?;
         let (i, dirz) = le_f32(i)?;
-        let (i, value) = take(i.len())(i)?;
+        let (i, vlen) = le_u32(i)?;
+        let (i, value) = take(vlen)(i)?;
+
+        if !self.entities.contains_key(&entity_id) {
+            panic!(
+                "Cell player, entity id {}, was created before base player!",
+                entity_id
+            );
+        }
+
+        // The value can be parsed into all internal properties
+        println!(
+            "{} {} {} {} {},{},{} {},{},{} value.len()={}",
+            entity_id,
+            space_id,
+            5, //unknown,
+            vehicle_id,
+            posx,
+            posy,
+            posz,
+            dirx,
+            diry,
+            dirz,
+            value.len()
+        );
+        let entity_type = self.entities.get(&entity_id).unwrap();
+        let spec = &self.specs[*entity_type as usize - 1];
+        let mut value = value;
+        let mut prop_values = vec![];
+        for (idx, property) in spec.internal_properties.iter().enumerate() {
+            println!("{}: {}", idx, property.name);
+            println!("{:#?}", property.prop_type);
+            println!("{:?}", value);
+            let (new_value, prop_value) = property.prop_type.parse_value(value).unwrap();
+            println!("{:?}", prop_value);
+            value = new_value;
+            prop_values.push(prop_value);
+        }
+        println!("CellPlayerCreate properties: {:?}", prop_values);
+
         Ok((
             i,
             PacketType::CellPlayerCreate(CellPlayerCreatePacket {
@@ -466,7 +505,7 @@ impl Parser {
                     y: diry,
                     z: dirz,
                 },
-                unknown,
+                unknown: 5,
                 value,
             }),
         ))

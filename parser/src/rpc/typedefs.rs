@@ -147,7 +147,9 @@ pub struct FixedDictProperty {
 pub enum ArgType {
     Primitive(PrimitiveType),
     Array(Box<ArgType>),
-    FixedDict(Vec<FixedDictProperty>),
+
+    /// (allow_none, properties)
+    FixedDict((bool, Vec<FixedDictProperty>)),
     Tuple((Box<ArgType>, usize)),
 }
 
@@ -170,6 +172,7 @@ pub enum ArgValue {
     Blob(Vec<u8>),
     Array(Vec<ArgValue>),
     FixedDict(HashMap<String, ArgValue>),
+    NullableFixedDict(Option<HashMap<String, ArgValue>>),
     Tuple(Vec<ArgValue>),
 }
 
@@ -194,8 +197,10 @@ impl ArgType {
             Self::Primitive(PrimitiveType::UnicodeString) => INFINITY,
             Self::Primitive(PrimitiveType::Blob) => INFINITY,
             Self::Array(_) => INFINITY, // TODO: Fixed-size arrays?
-            Self::FixedDict(props) => {
-                // TODO: allow_none?
+            Self::FixedDict((allow_none, props)) => {
+                if *allow_none {
+                    return INFINITY;
+                }
                 props
                     .iter()
                     .map(|x| x.prop_type.sort_size())
@@ -231,15 +236,28 @@ impl ArgType {
                 }
                 Ok((i, ArgValue::Array(values)))
             }
-            Self::FixedDict(props) => {
+            Self::FixedDict((allow_none, props)) => {
                 let mut dict = HashMap::new();
                 let mut i = i;
+                if *allow_none {
+                    let (new_i, flag) = le_u8(i)?;
+                    i = new_i;
+                    if flag == 0 {
+                        return Ok((i, ArgValue::NullableFixedDict(None)));
+                    } else if flag != 1 {
+                        panic!("Unknown fixed dict flag {:?} in {:?}", flag, i);
+                    }
+                }
                 for property in props.iter() {
                     let (new_i, element) = property.prop_type.parse_value(i)?;
                     i = new_i;
                     dict.insert(property.name.clone(), element);
                 }
-                Ok((i, ArgValue::FixedDict(dict)))
+                if *allow_none {
+                    Ok((i, ArgValue::NullableFixedDict(Some(dict))))
+                } else {
+                    Ok((i, ArgValue::FixedDict(dict)))
+                }
             }
             Self::Tuple((t, count)) => {
                 panic!("Tuple parsing is unsupported");
@@ -296,10 +314,14 @@ pub fn parse_type(arg: &roxmltree::Node, aliases: &HashMap<String, ArgType>) -> 
     } else if t == "FIXED_DICT" {
         let mut props = vec![];
         println!("{:#?}", arg);
+        let allow_none = match child_by_name(&arg, "AllowNone") {
+            Some(n) => true, // TODO: Check if the text is actually "true"
+            None => false,
+        };
         let properties = match child_by_name(&arg, "Properties") {
             Some(p) => p,
             None => {
-                return ArgType::FixedDict(vec![]);
+                return ArgType::FixedDict((allow_none, vec![]));
             }
         };
         for prop in properties.children() {
@@ -314,7 +336,7 @@ pub fn parse_type(arg: &roxmltree::Node, aliases: &HashMap<String, ArgType>) -> 
                 prop_type,
             });
         }
-        ArgType::FixedDict(props)
+        ArgType::FixedDict((allow_none, props))
     } else if t == "TUPLE" {
         let subtype = parse_type(&child_by_name(arg, "of").unwrap(), aliases);
         let count = child_by_name(arg, "size")
@@ -391,22 +413,25 @@ mod test {
         let t = parse_type(&root, &HashMap::new());
         assert_eq!(
             t,
-            ArgType::FixedDict(vec![
-                FixedDictProperty {
-                    name: "byShip".to_string(),
-                    prop_type: ArgType::Primitive(PrimitiveType::Float64),
-                },
-                FixedDictProperty {
-                    name: "byPlane".to_string(),
-                    prop_type: ArgType::Primitive(PrimitiveType::Float64),
-                },
-                FixedDictProperty {
-                    name: "bySmoke".to_string(),
-                    prop_type: ArgType::Primitive(PrimitiveType::Float64),
-                }
-            ])
+            ArgType::FixedDict((
+                false,
+                vec![
+                    FixedDictProperty {
+                        name: "byShip".to_string(),
+                        prop_type: ArgType::Primitive(PrimitiveType::Float32),
+                    },
+                    FixedDictProperty {
+                        name: "byPlane".to_string(),
+                        prop_type: ArgType::Primitive(PrimitiveType::Float32),
+                    },
+                    FixedDictProperty {
+                        name: "bySmoke".to_string(),
+                        prop_type: ArgType::Primitive(PrimitiveType::Float32),
+                    }
+                ]
+            ))
         );
-        assert_eq!(t.sort_size(), 24);
+        assert_eq!(t.sort_size(), 12);
     }
 
     #[test]
@@ -433,6 +458,41 @@ mod test {
         let doc = roxmltree::Document::parse(&proptype).unwrap();
         let root = doc.root();
         let t = parse_type(&root, &aliases);
-        assert_eq!(t.sort_size(), 65536);
+        assert_eq!(t.sort_size(), 65535);
+    }
+
+    #[test]
+    fn test_fixeddict_allownone() {
+        let spec = "<TRIGGERS_STATE>
+            FIXED_DICT
+            <Properties>
+                <modifier><Type> MODIFIER_STATE </Type></modifier>
+            </Properties>
+            <AllowNone>true</AllowNone>
+        </TRIGGERS_STATE>";
+        let mut aliases = HashMap::new();
+        aliases.insert(
+            "MODIFIER_STATE".to_string(),
+            ArgType::Primitive(PrimitiveType::Uint32),
+        );
+
+        let doc = roxmltree::Document::parse(&spec).unwrap();
+        let root = doc.root_element();
+        let t = parse_type(&root, &aliases);
+        println!("{:#?}", t);
+
+        let data = [0];
+        let (i, data) = t.parse_value(&data).unwrap();
+        assert_eq!(i.len(), 0);
+        assert_eq!(data, ArgValue::NullableFixedDict(None));
+
+        let data = [1, 5, 0, 0, 0];
+        let (i, data) = t.parse_value(&data).unwrap();
+        assert_eq!(i.len(), 0);
+        let m = match data {
+            ArgValue::NullableFixedDict(Some(h)) => h,
+            _ => panic!(),
+        };
+        assert_eq!(*m.get("modifier").unwrap(), ArgValue::Uint32(5));
     }
 }

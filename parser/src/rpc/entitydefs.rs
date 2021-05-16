@@ -78,6 +78,7 @@ pub struct EntitySpec {
     cell_methods: Vec<Method>,
     pub client_methods: Vec<Method>,
     pub properties: Vec<Property>,
+    pub internal_properties: Vec<Property>,
 }
 
 fn child_by_name<'a, 'b>(
@@ -350,6 +351,26 @@ pub fn parse_scripts(script_directory: std::path::PathBuf) -> Vec<EntitySpec> {
         let mut properties = inherits.properties;
         properties.append(&mut def.properties);
 
+        /*
+            EntityFlags.ALL_CLIENTS |
+            # not used for some reason
+            # EntityFlags.BASE_AND_CLIENT |
+            EntityFlags.OTHER_CLIENTS |
+            EntityFlags.OWN_CLIENT |
+            EntityFlags.CELL_PUBLIC_AND_OWN |
+            EntityFlags.ALL_CLIENTS
+        */
+        let internal_properties = properties
+            .iter()
+            .filter(|property| {
+                property.flags == Flags::AllClients
+                    || property.flags == Flags::OtherClients
+                    || property.flags == Flags::OwnClient
+                    || property.flags == Flags::CellPublicAndOwn
+            })
+            .map(|property| (*property).clone())
+            .collect();
+
         properties = properties
             .iter()
             .filter(|property| {
@@ -377,6 +398,7 @@ pub fn parse_scripts(script_directory: std::path::PathBuf) -> Vec<EntitySpec> {
             cell_methods,
             client_methods,
             properties,
+            internal_properties,
         });
     }
 

@@ -1,0 +1,9 @@
+The video of this match is in test-1619985678.mp4, at 40:31 (2431s) in.
+
+Note on entity IDs:
+576298 is the enemy Dreadnaught
+576284 is the enemy Langley vehicle
+576268 is the enemy K. Albert vehicle
+576274 is the friendly St. Louis (DirtySneaker)
+
+576297 is the player avatar
