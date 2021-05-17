@@ -2,6 +2,7 @@ use log::warn;
 use nom::{
     bytes::complete::take, multi::count, number::complete::be_u32, number::complete::be_u8,
     number::complete::le_f32, number::complete::le_u16, number::complete::le_u32,
+    number::complete::le_u8,
 };
 use serde_derive::Serialize;
 use std::collections::HashMap;
@@ -63,7 +64,7 @@ pub struct EntityMethodPacket<'a> {
 }
 
 #[derive(Debug, Serialize)]
-pub struct EntityCreatePacket<'a> {
+pub struct EntityCreatePacket {
     pub entity_id: u32,
     pub entity_type: u16,
     pub vehicle_id: u32,
@@ -75,7 +76,8 @@ pub struct EntityCreatePacket<'a> {
     pub dir_y: f32,
     pub dir_z: f32,
     pub unknown: u32,
-    pub state: &'a [u8],
+    //pub state: &'a [u8],
+    pub props: HashMap<String, crate::rpc::typedefs::ArgValue>,
 }
 
 /// Note that this packet frequently appears twice - it appears that it
@@ -151,7 +153,7 @@ pub enum PacketType<'a> {
     CellPlayerCreate(CellPlayerCreatePacket<'a>),
     EntityEnter(EntityEnterPacket),
     EntityLeave(EntityLeavePacket),
-    EntityCreate(EntityCreatePacket<'a>),
+    EntityCreate(EntityCreatePacket),
     EntityProperty(EntityPropertyPacket<'a>),
     EntityMethod(EntityMethodPacket<'a>),
     Entity(EntityPacket<'a>), // 0x7 and 0x8 are known to be of this type
@@ -414,11 +416,30 @@ impl Parser {
         let (i, diry) = le_f32(i)?;
         let (i, dirz) = le_f32(i)?;
         let (i, unknown) = le_u32(i)?;
-        let (i, state) = take(i.len())(i)?;
+        let (_, state) = take(i.len())(i)?;
         if self.entities.contains_key(&entity_id) {
             println!("DBG: Entity {} got created twice!", entity_id);
         }
         self.entities.insert(entity_id, entity_type);
+
+        let (i, num_props) = le_u8(i)?;
+        println!(
+            "Creating entity type {} with {} props {:?}",
+            entity_type, num_props, i
+        );
+        let mut i = i;
+        let mut props = HashMap::new();
+        for _ in 0..num_props {
+            let (new_i, prop_id) = le_u8(i)?;
+            let spec = &self.specs[entity_type as usize - 1].properties[prop_id as usize];
+            println!("spec {} {}: {:?}", prop_id, new_i.len(), spec.prop_type);
+            let (new_i, value) = spec.prop_type.parse_value(new_i).unwrap();
+            println!("{:?}", value);
+            i = new_i;
+            props.insert(spec.name.clone(), value);
+        }
+        println!("{:?}", props);
+
         Ok((
             i,
             PacketType::EntityCreate(EntityCreatePacket {
@@ -433,7 +454,8 @@ impl Parser {
                 dir_y: diry,
                 dir_z: dirz,
                 unknown,
-                state,
+                //state,
+                props,
             }),
         ))
     }
@@ -562,6 +584,11 @@ impl Parser {
             0x7 => self.parse_entity_property_packet(i)?,
             0x8 => self.parse_entity_method_packet(i)?,
             0xA => self.parse_position_packet(i)?,
+            /*0x22 => {
+                // Nested property packet?
+                println!("{:#?}", i);
+                panic!();
+            },*/
             /*0x24 => {
                 parse_type_24_packet(i)?
             }*/

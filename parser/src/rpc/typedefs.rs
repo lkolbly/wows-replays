@@ -146,7 +146,7 @@ pub struct FixedDictProperty {
 #[derive(Clone, Debug, PartialEq)]
 pub enum ArgType {
     Primitive(PrimitiveType),
-    Array(Box<ArgType>),
+    Array((Option<usize>, Box<ArgType>)),
 
     /// (allow_none, properties)
     FixedDict((bool, Vec<FixedDictProperty>)),
@@ -196,7 +196,15 @@ impl ArgType {
             Self::Primitive(PrimitiveType::String) => INFINITY,
             Self::Primitive(PrimitiveType::UnicodeString) => INFINITY,
             Self::Primitive(PrimitiveType::Blob) => INFINITY,
-            Self::Array(_) => INFINITY, // TODO: Fixed-size arrays?
+            Self::Array((None, _)) => INFINITY,
+            Self::Array((Some(count), t)) => {
+                let sort_size = t.sort_size();
+                if sort_size == INFINITY {
+                    INFINITY
+                } else {
+                    sort_size * count
+                }
+            }
             Self::FixedDict((allow_none, props)) => {
                 if *allow_none {
                     return INFINITY;
@@ -226,9 +234,12 @@ impl ArgType {
     pub fn parse_value<'a>(&self, i: &'a [u8]) -> IResult<&'a [u8], ArgValue> {
         match self {
             Self::Primitive(p) => p.parse_value(i),
-            Self::Array(atype) => {
+            Self::Array((count, atype)) => {
                 let mut values = vec![];
-                let (mut i, length) = le_u8(i)?;
+                let (mut i, length) = match count {
+                    Some(count) => (i, *count as u8),
+                    None => le_u8(i)?,
+                };
                 for _ in 0..length {
                     let (new_i, element) = atype.parse_value(i)?;
                     i = new_i;
@@ -239,6 +250,8 @@ impl ArgType {
             Self::FixedDict((allow_none, props)) => {
                 let mut dict = HashMap::new();
                 let mut i = i;
+                //println!();
+                //println!("{} {:?}", allow_none, i);
                 if *allow_none {
                     let (new_i, flag) = le_u8(i)?;
                     i = new_i;
@@ -249,6 +262,7 @@ impl ArgType {
                     }
                 }
                 for property in props.iter() {
+                    //println!("{:?} {:?}", property.prop_type, i);
                     let (new_i, element) = property.prop_type.parse_value(i)?;
                     i = new_i;
                     dict.insert(property.name.clone(), element);
@@ -310,7 +324,9 @@ pub fn parse_type(arg: &roxmltree::Node, aliases: &HashMap<String, ArgType>) -> 
                 panic!("Unsupported array subtype {:?}", subtype);
             }
         };*/
-        ArgType::Array(Box::new(subtype))
+        let count = child_by_name(arg, "size")
+            .map(|count| count.text().unwrap().trim().parse::<usize>().unwrap());
+        ArgType::Array((count, Box::new(subtype)))
     } else if t == "FIXED_DICT" {
         let mut props = vec![];
         println!("{:#?}", arg);
@@ -494,5 +510,23 @@ mod test {
             _ => panic!(),
         };
         assert_eq!(*m.get("modifier").unwrap(), ArgValue::Uint32(5));
+    }
+
+    #[test]
+    fn test_fixedsize_array() {
+        let spec = "<Type>ARRAY<of>UINT16</of><size>2</size></Type>";
+        let doc = roxmltree::Document::parse(&spec).unwrap();
+        let root = doc.root_element();
+        let mut aliases = HashMap::new();
+        let t = parse_type(&root, &aliases);
+        println!("{:#?}", t);
+
+        let data = [1, 0, 3, 0];
+        let (i, data) = t.parse_value(&data).unwrap();
+        assert_eq!(i.len(), 0);
+        assert_eq!(
+            data,
+            ArgValue::Array(vec![ArgValue::Uint16(1), ArgValue::Uint16(3)])
+        );
     }
 }

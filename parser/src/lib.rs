@@ -2,7 +2,7 @@ mod error;
 mod packet;
 pub mod packet2;
 mod parse_77;
-mod rpc;
+pub mod rpc;
 //mod script_type;
 //mod scripts;
 mod wowsreplay;

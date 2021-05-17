@@ -194,15 +194,101 @@ fn render_trails(meta: &ReplayMeta, packets: &[Packet], output: &str) {
     }
 }
 
-fn print_chatlog(packets: &[Packet]) {
+fn print_chatlog(packets: &[wows_replays::packet2::Packet]) {
+    let mut usernames: HashMap<i32, String> = HashMap::new();
     for packet in packets.iter() {
         match packet {
-            Packet {
+            wows_replays::packet2::Packet {
                 clock,
-                payload: PacketType::Chat(p),
+                payload: wows_replays::packet2::PacketType::EntityCreate(ec),
                 ..
             } => {
-                println!("{}: {:?}", clock, p);
+                //println!("{:?}", ec);
+            }
+            wows_replays::packet2::Packet {
+                clock,
+                payload:
+                    wows_replays::packet2::PacketType::EntityMethod(
+                        wows_replays::packet2::EntityMethodPacket {
+                            entity_id,
+                            call: Some(parsed_call),
+                            ..
+                        },
+                    ),
+                ..
+            } => {
+                if parsed_call.method == "onChatMessage" {
+                    let target = match &parsed_call.args[1] {
+                        wows_replays::rpc::typedefs::ArgValue::String(s) => s,
+                        _ => panic!("foo"),
+                    };
+                    let message = match &parsed_call.args[2] {
+                        wows_replays::rpc::typedefs::ArgValue::String(s) => s,
+                        _ => panic!("foo"),
+                    };
+                    let sender_id = match &parsed_call.args[0] {
+                        wows_replays::rpc::typedefs::ArgValue::Int32(i) => i,
+                        _ => panic!("foo"),
+                    };
+                    //println!("{:?}", parsed_call.args);
+                    println!(
+                        "{}: {}: {} {}",
+                        clock,
+                        usernames.get(sender_id).unwrap(),
+                        std::str::from_utf8(&target).unwrap(),
+                        std::str::from_utf8(&message).unwrap()
+                    );
+                } else if parsed_call.method == "receieve_CommonCMD" {
+                    // Voiceline
+                } else if parsed_call.method == "onArenaStateReceived" {
+                    let value = serde_pickle::de::value_from_slice(match &parsed_call.args[3] {
+                        wows_replays::rpc::typedefs::ArgValue::Blob(x) => x,
+                        _ => panic!("foo"),
+                    })
+                    .unwrap();
+                    //println!("{:#?}", value);
+                    if let serde_pickle::value::Value::List(players) = &value {
+                        for player in players.iter() {
+                            let mut values = HashMap::new();
+                            if let serde_pickle::value::Value::List(elements) = player {
+                                for elem in elements.iter() {
+                                    if let serde_pickle::value::Value::Tuple(kv) = elem {
+                                        //println!("{:?}", kv);
+                                        let key = match kv[0] {
+                                            serde_pickle::value::Value::I64(key) => key,
+                                            _ => panic!(),
+                                        };
+                                        values.insert(key, kv[1].clone());
+                                    }
+                                }
+                            }
+                            //println!("{:#?}", values);
+                            let avatar = values.get(&0x1).unwrap();
+                            let username = values.get(&0x16).unwrap();
+                            let username = std::str::from_utf8(match username {
+                                serde_pickle::value::Value::Bytes(u) => u,
+                                _ => panic!(),
+                            })
+                            .unwrap();
+                            let shipid = values.get(&0x1d).unwrap();
+                            let playerid = values.get(&0x1e).unwrap();
+                            let playeravatarid = values.get(&0x1f).unwrap();
+                            println!(
+                                "{}: {}/{}/{}/{}",
+                                username, avatar, shipid, playerid, playeravatarid
+                            );
+                            usernames.insert(
+                                match avatar {
+                                    serde_pickle::value::Value::I64(i) => *i as i32,
+                                    _ => panic!(),
+                                },
+                                username.to_string(),
+                            );
+                        }
+                        println!("found {} players", players.len());
+                    }
+                    //panic!();
+                }
             }
             _ => {}
         }
@@ -245,10 +331,37 @@ fn find_float_approx(haystack: &[u8], needle: f32, epsilon: f32) -> Option<usize
     })
 }
 
-fn parse_replay<F: FnMut(u32, &ReplayMeta, &[Packet])>(
+fn parse_replay<F: FnMut(u32, &ReplayMeta, &[wows_replays::packet2::Packet])>(
     replay: &std::path::PathBuf,
     mut cb: F,
 ) -> Result<(), wows_replays::ErrorKind> {
+    /*let replay_file = ReplayFile::from_file(&std::path::PathBuf::from(
+        "test/replays/version-3747819.wowsreplay",
+    ))
+    .unwrap();
+
+    let version_parts: Vec<_> = replay_file.meta.clientVersionFromExe.split(",").collect();
+    assert!(version_parts.len() == 4);
+    let build: u32 = version_parts[3].parse().unwrap();
+
+    // Parse packets
+    let mut p = wows_replays::packet2::Parser::new(specs);
+    match p.parse_packets(&replay_file.packet_data) {
+        Ok(packets) => {
+            //cb(build, &replay_file.meta, &packets);
+            for packet in packets.iter() {
+                println!("{:?}", packet);
+            }
+            println!("Parsed {} packets", packets.len());
+        }
+        Err(e) => {
+            println!("Got error parsing!");
+        }
+    }
+    return;*/
+
+    let specs = parse_scripts(std::path::PathBuf::from("./wows-scripts"));
+
     let replay_file = ReplayFile::from_file(replay)?;
 
     let version_parts: Vec<_> = replay_file.meta.clientVersionFromExe.split(",").collect();
@@ -256,7 +369,8 @@ fn parse_replay<F: FnMut(u32, &ReplayMeta, &[Packet])>(
     let build: u32 = version_parts[3].parse().unwrap();
 
     // Parse packets
-    match parse_packets(build, &replay_file.packet_data) {
+    let mut p = wows_replays::packet2::Parser::new(specs);
+    match p.parse_packets(&replay_file.packet_data) {
         Ok(packets) => {
             cb(build, &replay_file.meta, &packets);
             Ok(())
@@ -301,7 +415,7 @@ fn truncate_string(s: &str, length: usize) -> &str {
 fn main() {
     let specs = parse_scripts(std::path::PathBuf::from("./wows-scripts"));
 
-    let replay_file = ReplayFile::from_file(&std::path::PathBuf::from(
+    /*let replay_file = ReplayFile::from_file(&std::path::PathBuf::from(
         "test/replays/version-3747819.wowsreplay",
     ))
     .unwrap();
@@ -318,12 +432,13 @@ fn main() {
             for packet in packets.iter() {
                 println!("{:?}", packet);
             }
+            println!("Parsed {} packets", packets.len());
         }
         Err(e) => {
             println!("Got error parsing!");
         }
     }
-    return;
+    return;*/
 
     let replay_arg = Arg::with_name("REPLAY")
         .help("The replay file to use")
@@ -596,7 +711,8 @@ fn main() {
             println!("Game mode: {} {}", meta.name, meta.gameLogic);
             println!("Game version: {}", meta.clientVersionFromExe);
             println!();
-            print_summary(packets);
+            // TODO: Update to packet2
+            //print_summary(packets);
         })
         .unwrap();
     }
@@ -611,7 +727,8 @@ fn main() {
         let input = matches.value_of("REPLAY").unwrap();
         let output = matches.value_of("out").unwrap();
         parse_replay(&std::path::PathBuf::from(input), |_, meta, packets| {
-            render_trails(meta, packets, output);
+            // TODO: Update to packet2
+            //render_trails(meta, packets, output);
         })
         .unwrap();
     }
@@ -650,7 +767,8 @@ fn main() {
                 print!("Parsing {}: ", truncate_string(filename, 20));
                 total += 1;
                 match parse_replay(&replay, |_, _, packets| {
-                    let invalid_packets: Vec<_> = packets
+                    // TODO: Update to packet2
+                    /*let invalid_packets: Vec<_> = packets
                         .iter()
                         .filter_map(|packet| match &packet.payload {
                             PacketType::Invalid(p) => Some(p),
@@ -666,7 +784,7 @@ fn main() {
                         );
                     } else {
                         println!("Successful!");
-                    }
+                    }*/
                 }) {
                     Ok(_) => {
                         successes += 1;
