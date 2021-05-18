@@ -154,7 +154,7 @@ pub enum ArgType {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
-pub enum ArgValue {
+pub enum ArgValue<'b> {
     Uint8(u8),
     Uint16(u16),
     Uint32(u32),
@@ -170,10 +170,10 @@ pub enum ArgValue {
     String(Vec<u8>),
     UnicodeString(Vec<u8>),
     Blob(Vec<u8>),
-    Array(Vec<ArgValue>),
-    FixedDict(HashMap<String, ArgValue>),
-    NullableFixedDict(Option<HashMap<String, ArgValue>>),
-    Tuple(Vec<ArgValue>),
+    Array(Vec<ArgValue<'b>>),
+    FixedDict(HashMap<&'b str, ArgValue<'b>>),
+    NullableFixedDict(Option<HashMap<&'b str, ArgValue<'b>>>),
+    Tuple(Vec<ArgValue<'b>>),
 }
 
 const INFINITY: usize = 0xffff;
@@ -231,7 +231,7 @@ impl ArgType {
         }
     }
 
-    pub fn parse_value<'a>(&self, i: &'a [u8]) -> IResult<&'a [u8], ArgValue> {
+    pub fn parse_value<'a, 'b>(&'b self, i: &'a [u8]) -> IResult<&'a [u8], ArgValue<'b>> {
         match self {
             Self::Primitive(p) => p.parse_value(i),
             Self::Array((count, atype)) => {
@@ -248,7 +248,7 @@ impl ArgType {
                 Ok((i, ArgValue::Array(values)))
             }
             Self::FixedDict((allow_none, props)) => {
-                let mut dict = HashMap::new();
+                let mut dict: HashMap<&'b str, ArgValue<'b>> = HashMap::new();
                 let mut i = i;
                 //println!();
                 //println!("{} {:?}", allow_none, i);
@@ -265,7 +265,7 @@ impl ArgType {
                     //println!("{:?} {:?}", property.prop_type, i);
                     let (new_i, element) = property.prop_type.parse_value(i)?;
                     i = new_i;
-                    dict.insert(property.name.clone(), element);
+                    dict.insert(&property.name, element);
                 }
                 if *allow_none {
                     Ok((i, ArgValue::NullableFixedDict(Some(dict))))

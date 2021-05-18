@@ -35,36 +35,34 @@ pub struct EntityPacket<'a> {
     pub payload: &'a [u8],
 }
 
-#[derive(Debug, Serialize)]
+/*#[derive(Debug, Serialize)]
 pub struct ParsedEntityProperty {
     pub property: String,
     pub value: ArgValue,
-}
+}*/
 
 #[derive(Debug, Serialize)]
-pub struct EntityPropertyPacket<'a> {
+pub struct EntityPropertyPacket<'b> {
     pub entity_id: u32,
-    pub prop_id: u32,
-    pub payload: &'a [u8],
-    pub property: Option<ParsedEntityProperty>,
+    pub property: &'b str,
+    pub value: ArgValue<'b>,
 }
 
-#[derive(Debug, Serialize)]
+/*#[derive(Debug, Serialize)]
 pub struct ParsedEntityMethodCall {
     pub method: String,
     pub args: Vec<ArgValue>,
-}
+}*/
 
 #[derive(Debug, Serialize)]
-pub struct EntityMethodPacket<'a> {
+pub struct EntityMethodPacket<'b> {
     pub entity_id: u32,
-    pub method_id: u32,
-    pub payload: &'a [u8],
-    pub call: Option<ParsedEntityMethodCall>,
+    pub method: &'b str,
+    pub args: Vec<ArgValue<'b>>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct EntityCreatePacket {
+pub struct EntityCreatePacket<'b> {
     pub entity_id: u32,
     pub entity_type: u16,
     pub vehicle_id: u32,
@@ -77,7 +75,7 @@ pub struct EntityCreatePacket {
     pub dir_z: f32,
     pub unknown: u32,
     //pub state: &'a [u8],
-    pub props: HashMap<String, crate::rpc::typedefs::ArgValue>,
+    pub props: HashMap<String, crate::rpc::typedefs::ArgValue<'b>>,
 }
 
 /// Note that this packet frequently appears twice - it appears that it
@@ -147,16 +145,16 @@ pub struct EntityEnterPacket {
 }
 
 #[derive(Debug, Serialize)]
-pub enum PacketType<'a> {
+pub enum PacketType<'a, 'b> {
     Position(PositionPacket),
     BasePlayerCreate(BasePlayerCreatePacket<'a>),
     CellPlayerCreate(CellPlayerCreatePacket<'a>),
     EntityEnter(EntityEnterPacket),
     EntityLeave(EntityLeavePacket),
-    EntityCreate(EntityCreatePacket),
-    EntityProperty(EntityPropertyPacket<'a>),
-    EntityMethod(EntityMethodPacket<'a>),
-    Entity(EntityPacket<'a>), // 0x7 and 0x8 are known to be of this type
+    EntityCreate(EntityCreatePacket<'b>),
+    EntityProperty(EntityPropertyPacket<'b>),
+    EntityMethod(EntityMethodPacket<'b>),
+    //Entity(EntityPacket<'a>), // 0x7 and 0x8 are known to be of this type
     //Chat(ChatPacket<'a>),
     //Timing(TimingPacket),
     //ArtilleryHit(ArtilleryHitPacket<'a>),
@@ -164,7 +162,7 @@ pub enum PacketType<'a> {
     //DamageReceived(DamageReceivedPacket),
     //Type24(Type24Packet),
     PlayerOrientation(PlayerOrientationPacket),
-    Type8_79(Vec<(u32, u32)>),
+    //Type8_79(Vec<(u32, u32)>),
     //Setup(SetupPacket),
     //ShipDestroyed(ShipDestroyedPacket),
     //VoiceLine(VoiceLinePacket),
@@ -175,11 +173,11 @@ pub enum PacketType<'a> {
 }
 
 #[derive(Debug, Serialize)]
-pub struct Packet<'a> {
+pub struct Packet<'a, 'b> {
     pub packet_size: u32,
     pub packet_type: u32,
     pub clock: f32,
-    pub payload: PacketType<'a>,
+    pub payload: PacketType<'a, 'b>,
     pub raw: &'a [u8],
 }
 
@@ -200,80 +198,43 @@ impl Parser {
         }
     }
 
-    fn parse_entity_property_packet<'a>(&self, i: &'a [u8]) -> IResult<&'a [u8], PacketType<'a>> {
+    fn parse_entity_property_packet<'a, 'b>(
+        &'b self,
+        i: &'a [u8],
+    ) -> IResult<&'a [u8], PacketType<'a, 'b>> {
         let (i, entity_id) = le_u32(i)?;
         let (i, prop_id) = le_u32(i)?;
         let (i, payload_length) = le_u32(i)?;
         let (i, payload) = take(payload_length)(i)?;
-        let mut packet = EntityPropertyPacket {
-            entity_id,
-            prop_id,
-            payload,
-            property: None,
-        };
 
         let entity_type = self.entities.get(&entity_id).unwrap();
-        //if let Some(entity_type) = entity_type {
-        //if prop_id == 26 {
         let spec = &self.specs[*entity_type as usize - 1].properties[prop_id as usize];
-        //println!("{:?}", spec);
-        //println!("{:?}", payload);
+
         let (_, pval) = spec.prop_type.parse_value(payload).unwrap();
-        //println!("DBG: {}: {}: {:?}", spec.name, entity_id, pval);
-        packet.property = Some(ParsedEntityProperty {
-            property: spec.name.clone(),
-            value: pval,
-        });
-        //}
-        //}
 
-        if galil_seiferas::gs_find(
-            payload,
-            &[68u8, 105, 114, 116, 121, 83, 110, 101, 97, 107, 101, 114],
-        )
-        .is_some()
-        {
-            //panic!();
-        }
-
-        /*let verfn = match lookup_entity_fn(version, supertype, subtype) {
-            Some(x) => x,
-            None => {
-                return Err(failure_from_kind(ErrorKind::UnsupportedReplayVersion(
-                    version,
-                )))
-            }
-        };
-        let (remaining, packet) = verfn(entity_id, supertype, subtype, payload)?;
-        if remaining.len() != 0 {
-            warn!(
-                "Parsing entity packet 0x{:x}.0x{:x} left {} bytes at end of stream",
-                supertype,
-                subtype,
-                remaining.len()
-            );
-        }*/
-        Ok((i, PacketType::EntityProperty(packet)))
+        Ok((
+            i,
+            PacketType::EntityProperty(EntityPropertyPacket {
+                entity_id,
+                property: &spec.name,
+                value: pval,
+            }),
+        ))
     }
 
-    fn parse_entity_method_packet<'a>(&self, i: &'a [u8]) -> IResult<&'a [u8], PacketType<'a>> {
+    fn parse_entity_method_packet<'a, 'b>(
+        &'b self,
+        i: &'a [u8],
+    ) -> IResult<&'a [u8], PacketType<'a, 'b>> {
         let (i, entity_id) = le_u32(i)?;
         let (i, method_id) = le_u32(i)?;
         let (i, payload_length) = le_u32(i)?;
         let (i, payload) = take(payload_length)(i)?;
-        let mut packet = EntityMethodPacket {
-            entity_id,
-            method_id,
-            payload,
-            call: None,
-        };
 
         let entity_type = self.entities.get(&entity_id).unwrap();
-        //if let Some(entity_type) = entity_type {
-        //if prop_id == 26 {
+
         let spec = &self.specs[*entity_type as usize - 1].client_methods[method_id as usize];
-        //println!("{:?}", spec);
-        //println!("{:?}", payload);
+
         let mut i = payload;
         let mut args = vec![];
         for arg in spec.args.iter() {
@@ -281,45 +242,21 @@ impl Parser {
             args.push(pval);
             i = new_i;
         }
-        //println!("DBG: {}: {}: {:?}", spec.name, entity_id, args);
-        packet.call = Some(ParsedEntityMethodCall {
-            method: spec.name.clone(),
-            args: args,
-        });
-        //}
-        //}
 
-        /*if galil_seiferas::gs_find(
-            payload,
-            &[68u8, 105, 114, 116, 121, 83, 110, 101, 97, 107, 101, 114],
-        )
-        .is_some()
-        {
-            println!("{:#?}", packet.call);
-            //panic!();
-        }*/
-
-        /*let verfn = match lookup_entity_fn(version, supertype, subtype) {
-            Some(x) => x,
-            None => {
-                return Err(failure_from_kind(ErrorKind::UnsupportedReplayVersion(
-                    version,
-                )))
-            }
-        };
-        let (remaining, packet) = verfn(entity_id, supertype, subtype, payload)?;
-        if remaining.len() != 0 {
-            warn!(
-                "Parsing entity packet 0x{:x}.0x{:x} left {} bytes at end of stream",
-                supertype,
-                subtype,
-                remaining.len()
-            );
-        }*/
-        Ok((i, PacketType::EntityMethod(packet)))
+        Ok((
+            i,
+            PacketType::EntityMethod(EntityMethodPacket {
+                entity_id,
+                method: &spec.name,
+                args,
+            }),
+        ))
     }
 
-    fn parse_position_packet<'a>(&self, i: &'a [u8]) -> IResult<&'a [u8], PacketType<'a>> {
+    fn parse_position_packet<'a, 'b>(
+        &'b self,
+        i: &'a [u8],
+    ) -> IResult<&'a [u8], PacketType<'a, 'b>> {
         let (i, pid) = le_u32(i)?;
         let (i, zero) = le_u32(i)?;
         if zero != 0 {
@@ -353,10 +290,10 @@ impl Parser {
         ))
     }
 
-    fn parse_player_orientation_packet<'a>(
-        &self,
+    fn parse_player_orientation_packet<'a, 'b>(
+        &'b self,
         i: &'a [u8],
-    ) -> IResult<&'a [u8], PacketType<'a>> {
+    ) -> IResult<&'a [u8], PacketType<'a, 'b>> {
         assert!(i.len() == 0x20);
         let (i, pid) = le_u32(i)?;
         let (i, parent_id) = le_u32(i)?;
@@ -380,16 +317,20 @@ impl Parser {
             }),
         ))
     }
-    fn parse_unknown_packet<'a>(
-        &self,
+
+    fn parse_unknown_packet<'a, 'b>(
+        &'b self,
         i: &'a [u8],
         payload_size: u32,
-    ) -> IResult<&'a [u8], PacketType<'a>> {
+    ) -> IResult<&'a [u8], PacketType<'a, 'b>> {
         let (i, contents) = take(payload_size)(i)?;
         Ok((i, PacketType::Unknown(contents)))
     }
 
-    fn parse_base_player_create<'a>(&mut self, i: &'a [u8]) -> IResult<&'a [u8], PacketType<'a>> {
+    fn parse_base_player_create<'a, 'b>(
+        &'b mut self,
+        i: &'a [u8],
+    ) -> IResult<&'a [u8], PacketType<'a, 'b>> {
         let (i, entity_id) = le_u32(i)?;
         let (i, entity_type) = le_u16(i)?;
         let (i, state) = take(i.len())(i)?;
@@ -404,7 +345,10 @@ impl Parser {
         ))
     }
 
-    fn parse_entity_create<'a>(&mut self, i: &'a [u8]) -> IResult<&'a [u8], PacketType<'a>> {
+    fn parse_entity_create<'a, 'b>(
+        &'b mut self,
+        i: &'a [u8],
+    ) -> IResult<&'a [u8], PacketType<'a, 'b>> {
         let (i, entity_id) = le_u32(i)?;
         let (i, entity_type) = le_u16(i)?;
         let (i, vehicle_id) = le_u32(i)?;
@@ -460,7 +404,10 @@ impl Parser {
         ))
     }
 
-    fn parse_cell_player_create<'a>(&self, i: &'a [u8]) -> IResult<&'a [u8], PacketType<'a>> {
+    fn parse_cell_player_create<'a, 'b>(
+        &'b mut self,
+        i: &'a [u8],
+    ) -> IResult<&'a [u8], PacketType<'a, 'b>> {
         let (i, entity_id) = le_u32(i)?;
         let (i, space_id) = le_u32(i)?;
         //let (i, unknown) = le_u16(i)?;
@@ -533,12 +480,15 @@ impl Parser {
         ))
     }
 
-    fn parse_entity_leave<'a>(&mut self, i: &'a [u8]) -> IResult<&'a [u8], PacketType<'a>> {
+    fn parse_entity_leave<'a, 'b>(&'b self, i: &'a [u8]) -> IResult<&'a [u8], PacketType<'a, 'b>> {
         let (i, entity_id) = le_u32(i)?;
         Ok((i, PacketType::EntityLeave(EntityLeavePacket { entity_id })))
     }
 
-    fn parse_entity_enter<'a>(&mut self, i: &'a [u8]) -> IResult<&'a [u8], PacketType<'a>> {
+    fn parse_entity_enter<'a, 'b>(
+        &'b mut self,
+        i: &'a [u8],
+    ) -> IResult<&'a [u8], PacketType<'a, 'b>> {
         let (i, entity_id) = le_u32(i)?;
         let (i, space_id) = le_u32(i)?;
         let (i, vehicle_id) = le_u32(i)?;
@@ -552,11 +502,11 @@ impl Parser {
         ))
     }
 
-    fn parse_naked_packet<'a>(
-        &mut self,
+    fn parse_naked_packet<'a, 'b>(
+        &'b mut self,
         packet_type: u32,
         i: &'a [u8],
-    ) -> IResult<&'a [u8], PacketType<'a>> {
+    ) -> IResult<&'a [u8], PacketType<'a, 'b>> {
         /*
         PACKETS_MAPPING = {
             0x0: BasePlayerCreate,
@@ -603,7 +553,7 @@ impl Parser {
         Ok((i, payload))
     }
 
-    fn parse_packet<'a>(&mut self, i: &'a [u8]) -> IResult<&'a [u8], Packet<'a>> {
+    fn parse_packet<'a, 'b>(&'b mut self, i: &'a [u8]) -> IResult<&'a [u8], Packet<'a, 'b>> {
         let (i, packet_size) = le_u32(i)?;
         let (i, packet_type) = le_u32(i)?;
         let (i, clock) = le_f32(i)?;
@@ -649,14 +599,23 @@ impl Parser {
         ))
     }
 
-    pub fn parse_packets<'a>(&mut self, i: &'a [u8]) -> Result<Vec<Packet<'a>>, ErrorKind> {
+    pub fn parse_packets<'a, 'b, P: PacketProcessor>(
+        &'b mut self,
+        i: &'a [u8],
+        p: &mut PacketProcessor,
+    ) -> Result<(), ErrorKind> {
         let mut i = i;
-        let mut v = vec![];
+        //let mut v = vec![];
         while i.len() > 0 {
             let (remaining, packet) = self.parse_packet(i)?;
             i = remaining;
-            v.push(packet);
+            //v.push(packet);
+            p.process(packet);
         }
-        Ok(v)
+        Ok(())
     }
+}
+
+pub trait PacketProcessor {
+    fn process(&mut self, packet: Packet<'_, '_>);
 }
