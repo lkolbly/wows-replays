@@ -329,7 +329,7 @@ pub fn parse_type(arg: &roxmltree::Node, aliases: &HashMap<String, ArgType>) -> 
         ArgType::Array((count, Box::new(subtype)))
     } else if t == "FIXED_DICT" {
         let mut props = vec![];
-        println!("{:#?}", arg);
+        //println!("{:#?}", arg);
         let allow_none = match child_by_name(&arg, "AllowNone") {
             Some(n) => true, // TODO: Check if the text is actually "true"
             None => false,
@@ -381,10 +381,10 @@ pub fn parse_aliases(file: &std::path::PathBuf) -> HashMap<String, ArgType> {
         if !t.is_element() {
             continue;
         }
-        println!("{}", t.tag_name().name());
+        //println!("{}", t.tag_name().name());
         aliases.insert(t.tag_name().name().to_string(), parse_type(&t, &aliases));
     }
-    println!("Found {} type aliases", aliases.len());
+    //println!("Found {} type aliases", aliases.len());
     aliases
 }
 
@@ -495,7 +495,7 @@ mod test {
         let doc = roxmltree::Document::parse(&spec).unwrap();
         let root = doc.root_element();
         let t = parse_type(&root, &aliases);
-        println!("{:#?}", t);
+        //println!("{:#?}", t);
 
         let data = [0];
         let (i, data) = t.parse_value(&data).unwrap();
@@ -519,7 +519,7 @@ mod test {
         let root = doc.root_element();
         let mut aliases = HashMap::new();
         let t = parse_type(&root, &aliases);
-        println!("{:#?}", t);
+        //println!("{:#?}", t);
 
         let data = [1, 0, 3, 0];
         let (i, data) = t.parse_value(&data).unwrap();

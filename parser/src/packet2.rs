@@ -362,27 +362,27 @@ impl Parser {
         let (i, unknown) = le_u32(i)?;
         let (_, state) = take(i.len())(i)?;
         if self.entities.contains_key(&entity_id) {
-            println!("DBG: Entity {} got created twice!", entity_id);
+            //println!("DBG: Entity {} got created twice!", entity_id);
         }
         self.entities.insert(entity_id, entity_type);
 
         let (i, num_props) = le_u8(i)?;
-        println!(
+        /*println!(
             "Creating entity type {} with {} props {:?}",
             entity_type, num_props, i
-        );
+        );*/
         let mut i = i;
         let mut props: HashMap<&str, _> = HashMap::new();
         for _ in 0..num_props {
             let (new_i, prop_id) = le_u8(i)?;
             let spec = &self.specs[entity_type as usize - 1].properties[prop_id as usize];
-            println!("spec {} {}: {:?}", prop_id, new_i.len(), spec.prop_type);
+            //println!("spec {} {}: {:?}", prop_id, new_i.len(), spec.prop_type);
             let (new_i, value) = spec.prop_type.parse_value(new_i).unwrap();
-            println!("{:?}", value);
+            //println!("{:?}", value);
             i = new_i;
             props.insert(&spec.name, value);
         }
-        println!("{:?}", props);
+        //println!("{:?}", props);
 
         Ok((
             i,
@@ -429,7 +429,7 @@ impl Parser {
         }
 
         // The value can be parsed into all internal properties
-        println!(
+        /*println!(
             "{} {} {} {} {},{},{} {},{},{} value.len()={}",
             entity_id,
             space_id,
@@ -442,21 +442,21 @@ impl Parser {
             diry,
             dirz,
             value.len()
-        );
+        );*/
         let entity_type = self.entities.get(&entity_id).unwrap();
         let spec = &self.specs[*entity_type as usize - 1];
         let mut value = value;
         let mut prop_values = vec![];
         for (idx, property) in spec.internal_properties.iter().enumerate() {
-            println!("{}: {}", idx, property.name);
-            println!("{:#?}", property.prop_type);
-            println!("{:?}", value);
+            //println!("{}: {}", idx, property.name);
+            //println!("{:#?}", property.prop_type);
+            //println!("{:?}", value);
             let (new_value, prop_value) = property.prop_type.parse_value(value).unwrap();
-            println!("{:?}", prop_value);
+            //println!("{:?}", prop_value);
             value = new_value;
             prop_values.push(prop_value);
         }
-        println!("CellPlayerCreate properties: {:?}", prop_values);
+        //println!("CellPlayerCreate properties: {:?}", prop_values);
 
         Ok((
             i,
@@ -545,11 +545,11 @@ impl Parser {
             0x2b => self.parse_player_orientation_packet(i)?,
             _ => self.parse_unknown_packet(i, i.len().try_into().unwrap())?,
         };
-        if galil_seiferas::gs_find(orig_i, &[69u8, 69, 80, 76, 69]).is_some() {
+        /*if galil_seiferas::gs_find(orig_i, &[69u8, 69, 80, 76, 69]).is_some() {
             println!("{:#?}", payload);
             println!("{}", orig_i.len());
             //panic!();
-        }
+        }*/
         Ok((i, payload))
     }
 

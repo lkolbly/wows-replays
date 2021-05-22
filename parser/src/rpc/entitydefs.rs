@@ -73,9 +73,9 @@ struct DefFile {
 }
 
 pub struct EntitySpec {
-    name: String,
-    base_methods: Vec<Method>,
-    cell_methods: Vec<Method>,
+    pub name: String,
+    pub base_methods: Vec<Method>,
+    pub cell_methods: Vec<Method>,
     pub client_methods: Vec<Method>,
     pub properties: Vec<Property>,
     pub internal_properties: Vec<Property>,
@@ -151,7 +151,7 @@ fn parse_method(method: &roxmltree::Node, aliases: &TypeAliases) -> Method {
     }
     let variable_length_header_size = match child_by_name(&method, "VariableLengthHeaderSize") {
         Some(x) => {
-            println!("{}: {:#?}", method.tag_name().name(), x.first_child());
+            //println!("{}: {:#?}", method.tag_name().name(), x.first_child());
             match x
                 .first_child()
                 .unwrap()
@@ -289,7 +289,7 @@ pub fn parse_scripts(script_directory: std::path::PathBuf) -> Vec<EntitySpec> {
                 parent_path.push("entity_defs");
                 parent_path.push("interfaces");
                 parent_path.push(&format!("{}.def", parent));
-                println!("Parsing parent {}...", parent);
+                //println!("Parsing parent {}...", parent);
                 parse_def(parent_path, &aliases)
             })
             .flat_map(|mut parent| {
@@ -304,7 +304,7 @@ pub fn parse_scripts(script_directory: std::path::PathBuf) -> Vec<EntitySpec> {
                         parent_path.push("entity_defs");
                         parent_path.push("interfaces");
                         parent_path.push(&format!("{}.def", parent));
-                        println!("Parsing parent {}...", parent);
+                        //println!("Parsing parent {}...", parent);
                         parse_def(parent_path, &aliases)
                     })
                     .collect();
@@ -330,12 +330,12 @@ pub fn parse_scripts(script_directory: std::path::PathBuf) -> Vec<EntitySpec> {
                     a
                 },
             );
-        println!(
+        /*println!(
             "{} has {} properties + {} inherited properties",
             child.tag_name().name(),
             def.properties.len(),
             inherits.properties.len()
-        );
+        );*/
 
         let mut base_methods = inherits.base_methods;
         base_methods.append(&mut def.base_methods);
@@ -402,7 +402,7 @@ pub fn parse_scripts(script_directory: std::path::PathBuf) -> Vec<EntitySpec> {
         });
     }
 
-    for EntitySpec in entities.iter() {
+    /*for EntitySpec in entities.iter() {
         println!(
             "{} has {} properties and {}/{}/{} base/cell/client methods",
             EntitySpec.name,
@@ -433,6 +433,6 @@ pub fn parse_scripts(script_directory: std::path::PathBuf) -> Vec<EntitySpec> {
                 );
             }
         }
-    }
+    }*/
     entities
 }
