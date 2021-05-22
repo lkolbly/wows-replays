@@ -8,7 +8,7 @@ use std::io::Read;
 use crate::error::*;
 
 #[allow(non_snake_case)]
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct VehicleInfoMeta {
     pub shipId: u64,
     pub relation: u32,
@@ -17,7 +17,7 @@ pub struct VehicleInfoMeta {
 }
 
 #[allow(non_snake_case)]
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ReplayMeta {
     pub matchGroup: String,
     pub gameMode: u32,

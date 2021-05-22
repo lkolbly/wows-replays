@@ -75,7 +75,7 @@ pub struct EntityCreatePacket<'b> {
     pub dir_z: f32,
     pub unknown: u32,
     //pub state: &'a [u8],
-    pub props: HashMap<String, crate::rpc::typedefs::ArgValue<'b>>,
+    pub props: HashMap<&'b str, crate::rpc::typedefs::ArgValue<'b>>,
 }
 
 /// Note that this packet frequently appears twice - it appears that it
@@ -372,7 +372,7 @@ impl Parser {
             entity_type, num_props, i
         );
         let mut i = i;
-        let mut props = HashMap::new();
+        let mut props: HashMap<&str, _> = HashMap::new();
         for _ in 0..num_props {
             let (new_i, prop_id) = le_u8(i)?;
             let spec = &self.specs[entity_type as usize - 1].properties[prop_id as usize];
@@ -380,7 +380,7 @@ impl Parser {
             let (new_i, value) = spec.prop_type.parse_value(new_i).unwrap();
             println!("{:?}", value);
             i = new_i;
-            props.insert(spec.name.clone(), value);
+            props.insert(&spec.name, value);
         }
         println!("{:?}", props);
 
