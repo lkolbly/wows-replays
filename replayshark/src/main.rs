@@ -26,7 +26,7 @@ fn extract_banners(packets: &[Packet]) -> HashMap<Banner, usize> {
         })
 }
 
-struct TrailRenderer {
+/*struct TrailRenderer {
     usernames: HashMap<i32, String>,
     trails: HashMap<u32, Vec<(f32, f32)>>,
     player_trail: Vec<(f32, f32)>,
@@ -216,7 +216,7 @@ impl MetaInjestor for TrailRenderer {
                 .unwrap();
         }
     }
-}
+}*/
 
 struct Survey {
     filename: String,
@@ -247,7 +247,7 @@ impl wows_replays::packet2::PacketProcessor for Survey {
     fn process(&mut self, packet: wows_replays::packet2::Packet<'_, '_>) {}
 }
 
-struct Summarizer {
+/*struct Summarizer {
     meta: Option<ReplayMeta>,
 }
 
@@ -273,9 +273,9 @@ impl wows_replays::packet2::PacketProcessor for Summarizer {
     fn process(&mut self, packet: wows_replays::packet2::Packet<'_, '_>) {
         // Collect banners, damage reports, etc.
     }
-}
+}*/
 
-struct PacketDump {
+/*struct PacketDump {
     time_offset: f32,
 }
 
@@ -288,9 +288,9 @@ impl wows_replays::packet2::PacketProcessor for PacketDump {
         let seconds = (time - minutes as f32 * 60.0).floor() as i32;
         println!("{:02}:{:02}: {:?}", minutes, seconds, packet.payload);
     }
-}
+}*/
 
-struct ArtilleryShot {
+/*struct ArtilleryShot {
     start_time: f32,
     start_pos: (f32, f32, f32),
     target: (f32, f32, f32),
@@ -639,9 +639,9 @@ impl wows_replays::packet2::PacketProcessor for DamageMonitor {
             _ => {}
         }
     }
-}
+}*/
 
-struct ChatLogger {
+/*struct ChatLogger {
     usernames: HashMap<i32, String>,
 }
 
@@ -745,7 +745,7 @@ impl wows_replays::packet2::PacketProcessor for ChatLogger {
             _ => {}
         }
     }
-}
+}*/
 
 fn print_summary(packets: &[Packet]) {
     let banners = extract_banners(packets);
@@ -788,13 +788,18 @@ trait MetaInjestor {
     fn finish(&self) {}
 }
 
-fn parse_replay<P: wows_replays::packet2::PacketProcessor + MetaInjestor>(
+//fn parse_replay<P: wows_replays::packet2::PacketProcessor + MetaInjestor>(
+fn parse_replay<P: wows_replays::analyzer::AnalyzerBuilder>(
     replay: &std::path::PathBuf,
     mut processor: P,
 ) -> Result<(), wows_replays::ErrorKind> {
-    let specs = parse_scripts(std::path::PathBuf::from("versions/0.10.3/scripts"));
-
     let replay_file = ReplayFile::from_file(replay)?;
+
+    let datafiles = wows_replays::version::Datafiles::new(
+        std::path::PathBuf::from("versions"),
+        wows_replays::version::Version::from_client_exe(&replay_file.meta.clientVersionFromExe),
+    );
+    let specs = parse_scripts(&datafiles);
 
     let version_parts: Vec<_> = replay_file.meta.clientVersionFromExe.split(",").collect();
     assert!(version_parts.len() == 4);
@@ -805,13 +810,19 @@ fn parse_replay<P: wows_replays::packet2::PacketProcessor + MetaInjestor>(
         return Ok(());
     }
 
-    processor.meta(&replay_file.meta);
+    let mut processor = processor.build(&replay_file.meta);
+    //processor.meta(&replay_file.meta);
 
     // Parse packets
     let mut p = wows_replays::packet2::Parser::new(specs);
-    match p.parse_packets::<P>(&replay_file.packet_data, &mut processor) {
+    let mut analyzer_set = wows_replays::analyzer::AnalyzerAdapter::new(vec![processor]);
+    match p.parse_packets::<wows_replays::analyzer::AnalyzerAdapter>(
+        &replay_file.packet_data,
+        &mut analyzer_set,
+    ) {
         Ok(packets) => {
-            processor.finish();
+            //processor.finish();
+            analyzer_set.finish();
             Ok(())
         }
         Err(e) => Err(e),
@@ -1005,7 +1016,7 @@ fn main() {
             time_offset: 2431.0,
         };
         parse_replay(&std::path::PathBuf::from(input), dump).unwrap();*/
-        let mut dump = DamageMonitor {
+        /*let mut dump = DamageMonitor {
             avatarid: 511279, //avatarid: 576297,
             shipid: 511280,   //shipid: 576298,
             time_offset: 5824.0,
@@ -1015,7 +1026,9 @@ fn main() {
             meta: None,
             output: "foo.png".to_string(),
             damages: vec![],
-        };
+        };*/
+        let mut dump = wows_replays::analyzer::packet_dump::PacketDumpBuilder::new(2431.0);
+        //let mut dump = wows_replays::analyzer::damage_trails::DamageTrailsBuilder::new();
         parse_replay(&std::path::PathBuf::from(input), dump).unwrap();
         return;
         parse_replay_force_version(
@@ -1193,7 +1206,8 @@ fn main() {
             //print_summary(packets);
         })
         .unwrap();*/
-        let mut dump = Summarizer { meta: None };
+        //let mut dump = Summarizer { meta: None };
+        let mut dump = wows_replays::analyzer::summary::SummaryBuilder::new();
         parse_replay(&std::path::PathBuf::from(input), dump).unwrap();
     }
     if let Some(matches) = matches.subcommand_matches("chat") {
@@ -1202,9 +1216,7 @@ fn main() {
             print_chatlog(packets);
         })
         .unwrap();*/
-        let mut chatlogger = ChatLogger {
-            usernames: HashMap::new(),
-        };
+        let mut chatlogger = wows_replays::analyzer::chat::ChatLoggerBuilder::new();
         parse_replay(&std::path::PathBuf::from(input), chatlogger).unwrap();
     }
     if let Some(matches) = matches.subcommand_matches("trace") {
@@ -1215,13 +1227,14 @@ fn main() {
             //render_trails(meta, packets, output);
         })
         .unwrap();*/
-        let mut trailer = TrailRenderer {
+        /*let mut trailer = TrailRenderer {
             usernames: HashMap::new(),
             player_trail: vec![],
             trails: HashMap::new(),
             output: output.to_string(),
             meta: None,
-        };
+        };*/
+        let mut trailer = wows_replays::analyzer::trails::TrailsBuilder::new(output);
         parse_replay(&std::path::PathBuf::from(input), trailer).unwrap();
     }
     if let Some(matches) = matches.subcommand_matches("survey") {
@@ -1269,7 +1282,7 @@ fn main() {
                     meta: None,
                     filename: filename.to_string(),
                 };
-                parse_replay(&std::path::PathBuf::from(replay), dump);
+                //parse_replay(&std::path::PathBuf::from(replay), dump);
                 /*match parse_replay(&replay, |_, _, packets| {
                     // TODO: Update to packet2
                     /*let invalid_packets: Vec<_> = packets

@@ -253,15 +253,12 @@ fn parse_def(file: std::path::PathBuf, aliases: &TypeAliases) -> DefFile {
     DefFile { implements }*/
 }
 
-pub fn parse_scripts(script_directory: std::path::PathBuf) -> Vec<EntitySpec> {
-    let mut alias_path = script_directory.clone();
-    alias_path.push("entity_defs");
-    alias_path.push("alias.xml");
+pub fn parse_scripts(gamedata: &crate::version::Datafiles) -> Vec<EntitySpec> {
+    let alias_path = gamedata.lookup("scripts/entity_defs/alias.xml");
 
     let aliases = parse_aliases(&alias_path);
 
-    let mut entities_xml_path = script_directory.clone();
-    entities_xml_path.push("entities.xml");
+    let entities_xml_path = gamedata.lookup("scripts/entities.xml");
     let entities_xml = std::fs::read_to_string(&entities_xml_path).unwrap();
     let doc = roxmltree::Document::parse(&entities_xml).unwrap();
     let root = doc.root();
@@ -277,19 +274,17 @@ pub fn parse_scripts(script_directory: std::path::PathBuf) -> Vec<EntitySpec> {
             continue;
         }
 
-        let mut def_path = script_directory.clone();
-        def_path.push("entity_defs");
-        def_path.push(&format!("{}.def", child.tag_name().name()));
+        let def_path = gamedata.lookup(&format!(
+            "scripts/entity_defs/{}.def",
+            child.tag_name().name()
+        ));
         let mut def = parse_def(def_path, &aliases);
         let mut inherits = def
             .implements
             .iter()
             .map(|parent| {
-                let mut parent_path = script_directory.clone();
-                parent_path.push("entity_defs");
-                parent_path.push("interfaces");
-                parent_path.push(&format!("{}.def", parent));
-                //println!("Parsing parent {}...", parent);
+                let parent_path =
+                    gamedata.lookup(&format!("scripts/entity_defs/interfaces/{}.def", parent));
                 parse_def(parent_path, &aliases)
             })
             .flat_map(|mut parent| {
@@ -300,10 +295,8 @@ pub fn parse_scripts(script_directory: std::path::PathBuf) -> Vec<EntitySpec> {
                     .iter()
                     .map(|parent| {
                         let parent = parent.trim();
-                        let mut parent_path = script_directory.clone();
-                        parent_path.push("entity_defs");
-                        parent_path.push("interfaces");
-                        parent_path.push(&format!("{}.def", parent));
+                        let parent_path = gamedata
+                            .lookup(&format!("scripts/entity_defs/interfaces/{}.def", parent));
                         //println!("Parsing parent {}...", parent);
                         parse_def(parent_path, &aliases)
                     })
