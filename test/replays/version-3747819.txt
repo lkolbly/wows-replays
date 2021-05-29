@@ -1,9 +1,27 @@
 The video of this match is in test-1619985678.mp4, at 40:31 (2431s) in.
 
-Note on entity IDs:
-576298 is the enemy Dreadnaught
-576284 is the enemy Langley vehicle
-576268 is the enemy K. Albert vehicle
-576274 is the friendly St. Louis (DirtySneaker)
-
-576297 is the player avatar
+Known entity IDs (avatar ID/ship ID):
+WAVEDIGGER:            576259 / 576260
+megalodon_777:         576261 / 576262
+CaiusVitallion:        576263 / 576264
+tobymonte1995:         576265 / 576266
+jotamares:             576267 / 576268
+SumYungHungGui69:      576269 / 576270
+Og_fire:               576271 / 576272
+DirtySneaker:          576273 / 576274
+Turnak:                576275 / 576276
+Cdr84:                 576277 / 576278
+LeoTorcello:           576279 / 576280
+gian87_3:              576281 / 576282
+MANUEL_377:            576283 / 576284
+Woolly85:              576285 / 576286
+Stonebraker_destroyer: 576287 / 576288
+Rosco1313:             576289 / 576290
+cj122x:                576291 / 576292
+rkolbly:               576293 / 576294
+JFTECH:                576295 / 576296
+lkolbly:               576297 / 576298
+PriceyQuarks:          576299 / 576300
+PapaEnder:             576301 / 576302
+pejeseron:             576303 / 576304
+Knawledgeable:         576305 / 576306

@@ -133,11 +133,9 @@ impl Analyzer for Summary {
                         _ => panic!("foo"),
                     })
                     .unwrap();
-                    //println!("receiveDamageStat({}: {:#?})", entity_id, value);
+
                     match value {
                         serde_pickle::value::Value::Dict(d) => {
-                            //println!();
-                            //println!("{:#?}", d);
                             for (k, v) in d.iter() {
                                 let k = match k {
                                     serde_pickle::value::HashableValue::Tuple(t) => {

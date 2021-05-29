@@ -28,7 +28,6 @@ impl AnalyzerAdapter {
 impl crate::packet2::PacketProcessor for AnalyzerAdapter {
     fn process(&mut self, packet: crate::packet2::Packet<'_, '_>) {
         for a in self.analyzers.iter_mut() {
-            //self.process(packet);
             a.process(&packet);
         }
     }

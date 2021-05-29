@@ -6,7 +6,6 @@ use image::Pixel;
 use image::{imageops::FilterType, ImageFormat, RgbImage};
 use plotters::prelude::*;
 use std::collections::HashMap;
-use std::convert::TryInto;
 
 pub struct DamageTrailsBuilder;
 
@@ -182,20 +181,14 @@ impl Analyzer for DamageMonitor {
             .build_ranged(-scale..scale, -scale..scale)
             .unwrap();
 
-        let colors = [BLUE, CYAN, GREEN, MAGENTA, RED, WHITE, YELLOW];
-        let mut min_x = 0.;
-        let mut max_x = 0.;
-
         // Add the trail for the player
-        {
-            scatter_ctx
-                .draw_series(
-                    self.trail
-                        .iter()
-                        .map(|(x, y)| Circle::new((*x as f64, *y as f64), 2, WHITE.filled())),
-                )
-                .unwrap();
-        }
+        scatter_ctx
+            .draw_series(
+                self.trail
+                    .iter()
+                    .map(|(x, y)| Circle::new((*x as f64, *y as f64), 2, WHITE.filled())),
+            )
+            .unwrap();
 
         // Mark each damage vector
         for dv in self.damages.iter() {
@@ -223,47 +216,26 @@ impl Analyzer for DamageMonitor {
         let time = packet.clock + self.time_offset;
         let minutes = (time / 60.0).floor() as i32;
         let seconds = (time - minutes as f32 * 60.0).floor() as i32;
-        //println!("{:02}:{:02}: {:?}", minutes, seconds, packet.payload);
         let time = format!("{:02}:{:02}", minutes, seconds);
 
-        match packet {
-            Packet {
-                clock,
-                payload: PacketType::Position(pos),
-                ..
-            } => {
-                //println!("{:?}", pos);
+        match &packet.payload {
+            PacketType::Position(pos) => {
                 if pos.pid == self.shipid {
                     self.position = (pos.x, pos.y, pos.z);
                     self.trail.push((pos.x, pos.z));
                 }
-                /*if !self.trails.contains_key(&pos.pid) {
-                    self.trails.insert(pos.pid, vec![]);
-                }
-                self.trails.get_mut(&pos.pid).unwrap().push((pos.x, pos.z));*/
             }
-            Packet {
-                clock,
-                payload: PacketType::PlayerOrientation(pos),
-                ..
-            } => {
-                //println!("{:?}", pos);
+            PacketType::PlayerOrientation(pos) => {
                 if pos.pid == self.shipid {
                     self.position = (pos.x, pos.y, pos.z);
                     self.trail.push((pos.x, pos.z));
                 }
-                //self.player_trail.push((pos.x, pos.z));
             }
-            Packet {
-                clock,
-                payload:
-                    PacketType::EntityMethod(EntityMethodPacket {
-                        entity_id,
-                        method,
-                        args,
-                    }),
-                ..
-            } => {
+            PacketType::EntityMethod(EntityMethodPacket {
+                entity_id,
+                method,
+                args,
+            }) => {
                 if *method == "receiveDamageStat" {
                     let value = serde_pickle::de::value_from_slice(match &args[0] {
                         crate::rpc::typedefs::ArgValue::Blob(x) => x,
@@ -360,7 +332,7 @@ impl Analyzer for DamageMonitor {
                                     }
                                     self.artillery_shots.get_mut(&owner_id).unwrap().push(
                                         ArtilleryShot {
-                                            start_time: *clock,
+                                            start_time: packet.clock,
                                             start_pos: match shot.get("pos").unwrap() {
                                                 crate::rpc::typedefs::ArgValue::Vector3(v) => {
                                                     v.clone()

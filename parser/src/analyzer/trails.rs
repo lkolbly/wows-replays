@@ -1,13 +1,11 @@
 use crate::analyzer::*;
-use crate::packet2::{EntityMethodPacket, Packet, PacketType};
+use crate::packet2::{Packet, PacketType};
 use crate::ReplayMeta;
-//use clap::{App, Arg, SubCommand};
 use image::GenericImageView;
 use image::Pixel;
 use image::{imageops::FilterType, ImageFormat, RgbImage};
 use plotters::prelude::*;
 use std::collections::HashMap;
-use std::convert::TryInto;
 
 pub struct TrailsBuilder {
     output: String,
@@ -43,23 +41,14 @@ struct TrailRenderer {
 
 impl Analyzer for TrailRenderer {
     fn process(&mut self, packet: &Packet<'_, '_>) {
-        match packet {
-            Packet {
-                clock,
-                payload: PacketType::Position(pos),
-                ..
-            } => {
-                //println!("{:?}", ec);
+        match &packet.payload {
+            PacketType::Position(pos) => {
                 if !self.trails.contains_key(&pos.pid) {
                     self.trails.insert(pos.pid, vec![]);
                 }
                 self.trails.get_mut(&pos.pid).unwrap().push((pos.x, pos.z));
             }
-            Packet {
-                clock,
-                payload: PacketType::PlayerOrientation(pos),
-                ..
-            } => {
+            PacketType::PlayerOrientation(pos) => {
                 self.player_trail.push((pos.x, pos.z));
             }
             _ => {}
@@ -203,18 +192,12 @@ impl Analyzer for TrailRenderer {
         }
 
         // Add the trail for the player
-        {
-            /*let mut v = vec!();
-            for idx in 0..d0.len() {
-                v.push((d0[idx].1 as f64, d2[idx].1 as f64));
-            }*/
-            scatter_ctx
-                .draw_series(
-                    self.player_trail
-                        .iter()
-                        .map(|(x, y)| Circle::new((*x as f64, *y as f64), 2, WHITE.filled())),
-                )
-                .unwrap();
-        }
+        scatter_ctx
+            .draw_series(
+                self.player_trail
+                    .iter()
+                    .map(|(x, y)| Circle::new((*x as f64, *y as f64), 2, WHITE.filled())),
+            )
+            .unwrap();
     }
 }

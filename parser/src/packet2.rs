@@ -1,6 +1,5 @@
-use log::warn;
 use nom::{
-    bytes::complete::take, multi::count, number::complete::be_u32, number::complete::be_u8,
+    bytes::complete::take, number::complete::be_u32, number::complete::be_u8,
     number::complete::le_f32, number::complete::le_u16, number::complete::le_u32,
     number::complete::le_u8,
 };
@@ -230,6 +229,7 @@ impl Parser {
         let (i, method_id) = le_u32(i)?;
         let (i, payload_length) = le_u32(i)?;
         let (i, payload) = take(payload_length)(i)?;
+        assert!(i.len() == 0);
 
         let entity_type = self.entities.get(&entity_id).unwrap();
 
@@ -447,7 +447,7 @@ impl Parser {
         let spec = &self.specs[*entity_type as usize - 1];
         let mut value = value;
         let mut prop_values = vec![];
-        for (idx, property) in spec.internal_properties.iter().enumerate() {
+        for property in spec.internal_properties.iter() {
             //println!("{}: {}", idx, property.name);
             //println!("{:#?}", property.prop_type);
             //println!("{:?}", value);
@@ -523,7 +523,6 @@ impl Parser {
             0x0a: Position
         }
         */
-        let orig_i = i;
         let (i, payload) = match packet_type {
             //0x7 | 0x8 => self.parse_entity_packet(version, packet_type, i)?,
             0x0 => self.parse_base_player_create(i)?,
@@ -545,11 +544,6 @@ impl Parser {
             0x2b => self.parse_player_orientation_packet(i)?,
             _ => self.parse_unknown_packet(i, i.len().try_into().unwrap())?,
         };
-        /*if galil_seiferas::gs_find(orig_i, &[69u8, 69, 80, 76, 69]).is_some() {
-            println!("{:#?}", payload);
-            println!("{}", orig_i.len());
-            //panic!();
-        }*/
         Ok((i, payload))
     }
 
@@ -602,14 +596,12 @@ impl Parser {
     pub fn parse_packets<'a, 'b, P: PacketProcessor>(
         &'b mut self,
         i: &'a [u8],
-        p: &mut PacketProcessor,
+        p: &mut P,
     ) -> Result<(), ErrorKind> {
         let mut i = i;
-        //let mut v = vec![];
         while i.len() > 0 {
             let (remaining, packet) = self.parse_packet(i)?;
             i = remaining;
-            //v.push(packet);
             p.process(packet);
         }
         Ok(())

@@ -1,9 +1,8 @@
 use nom::number::complete::{le_i16, le_i32, le_i64, le_i8, le_u64, le_u8};
 use nom::IResult;
 use nom::{
-    bytes::complete::take, multi::count, number::complete::be_u32, number::complete::be_u8,
-    number::complete::le_f32, number::complete::le_f64, number::complete::le_u16,
-    number::complete::le_u32,
+    bytes::complete::take, number::complete::le_f32, number::complete::le_f64,
+    number::complete::le_u16, number::complete::le_u32,
 };
 use serde_derive::Serialize;
 use std::collections::HashMap;
@@ -273,7 +272,7 @@ impl ArgType {
                     Ok((i, ArgValue::FixedDict(dict)))
                 }
             }
-            Self::Tuple((t, count)) => {
+            Self::Tuple((_t, _count)) => {
                 panic!("Tuple parsing is unsupported");
             }
         }
@@ -331,7 +330,7 @@ pub fn parse_type(arg: &roxmltree::Node, aliases: &HashMap<String, ArgType>) -> 
         let mut props = vec![];
         //println!("{:#?}", arg);
         let allow_none = match child_by_name(&arg, "AllowNone") {
-            Some(n) => true, // TODO: Check if the text is actually "true"
+            Some(_) => true, // TODO: Check if the text is actually "true"
             None => false,
         };
         let properties = match child_by_name(&arg, "Properties") {

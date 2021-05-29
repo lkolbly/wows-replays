@@ -29,16 +29,9 @@ impl Analyzer for ChatLogger {
         match packet {
             Packet {
                 clock,
-                payload: PacketType::EntityCreate(ec),
-                ..
-            } => {
-                //println!("{:?}", ec);
-            }
-            Packet {
-                clock,
                 payload:
                     PacketType::EntityMethod(EntityMethodPacket {
-                        entity_id,
+                        entity_id: _,
                         method,
                         args,
                     }),
@@ -57,7 +50,6 @@ impl Analyzer for ChatLogger {
                         crate::rpc::typedefs::ArgValue::Int32(i) => i,
                         _ => panic!("foo"),
                     };
-                    //println!("{:?}", parsed_call.args);
                     println!(
                         "{}: {}: {} {}",
                         clock,
@@ -65,22 +57,22 @@ impl Analyzer for ChatLogger {
                         std::str::from_utf8(&target).unwrap(),
                         std::str::from_utf8(&message).unwrap()
                     );
-                } else if *method == "receieve_CommonCMD" {
+                } else if *method == "receive_CommonCMD" {
                     // Voiceline
+                    println!("{}: voiceline {:#?}", clock, args);
                 } else if *method == "onArenaStateReceived" {
                     let value = serde_pickle::de::value_from_slice(match &args[3] {
                         crate::rpc::typedefs::ArgValue::Blob(x) => x,
                         _ => panic!("foo"),
                     })
                     .unwrap();
-                    //println!("{:#?}", value);
+
                     if let serde_pickle::value::Value::List(players) = &value {
                         for player in players.iter() {
                             let mut values = HashMap::new();
                             if let serde_pickle::value::Value::List(elements) = player {
                                 for elem in elements.iter() {
                                     if let serde_pickle::value::Value::Tuple(kv) = elem {
-                                        //println!("{:?}", kv);
                                         let key = match kv[0] {
                                             serde_pickle::value::Value::I64(key) => key,
                                             _ => panic!(),
@@ -89,7 +81,6 @@ impl Analyzer for ChatLogger {
                                     }
                                 }
                             }
-                            //println!("{:#?}", values);
                             let avatar = values.get(&0x1).unwrap();
                             let username = values.get(&0x16).unwrap();
                             let username = std::str::from_utf8(match username {
@@ -114,7 +105,6 @@ impl Analyzer for ChatLogger {
                         }
                         println!("found {} players", players.len());
                     }
-                    //panic!();
                 }
             }
             _ => {}

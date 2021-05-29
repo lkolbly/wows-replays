@@ -1,37 +1,13 @@
 use clap::{App, Arg, SubCommand};
-use image::GenericImageView;
-use image::Pixel;
-use image::{imageops::FilterType, ImageFormat, RgbImage};
-use plotters::prelude::*;
-use std::collections::HashMap;
-use std::convert::TryInto;
 
-use wows_replays::{
-    parse_packets, parse_scripts, Banner, ErrorKind, Packet, PacketType, ReplayFile, ReplayMeta,
-};
-
-fn extract_banners(packets: &[Packet]) -> HashMap<Banner, usize> {
-    packets
-        .iter()
-        .filter_map(|packet| match packet.payload {
-            PacketType::Banner(p) => Some(p),
-            _ => None,
-        })
-        .fold(HashMap::new(), |mut acc, banner| {
-            if !acc.contains_key(&banner) {
-                acc.insert(banner, 0);
-            }
-            *acc.get_mut(&banner).unwrap() += 1;
-            acc
-        })
-}
+use wows_replays::{parse_scripts, ReplayFile, ReplayMeta};
 
 struct Survey {
     filename: String,
     meta: Option<ReplayMeta>,
 }
 
-impl MetaInjestor for Survey {
+/*impl MetaInjestor for Survey {
     fn meta(&mut self, meta: &ReplayMeta) {
         self.meta = Some((*meta).clone());
     }
@@ -53,53 +29,11 @@ impl MetaInjestor for Survey {
 
 impl wows_replays::packet2::PacketProcessor for Survey {
     fn process(&mut self, packet: wows_replays::packet2::Packet<'_, '_>) {}
-}
+}*/
 
-fn print_summary(packets: &[Packet]) {
-    let banners = extract_banners(packets);
-    for (k, v) in banners.iter() {
-        println!("Banner {:?}: {}x", k, v);
-    }
-
-    let damage_dealt = packets
-        .iter()
-        .filter_map(|packet| match &packet.payload {
-            PacketType::ArtilleryHit(p) => {
-                if !p.is_incoming {
-                    Some(p.damage)
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        })
-        .fold(0, |acc, x| acc + x);
-    println!("Player dealt {} damage", damage_dealt);
-}
-
-// From https://stackoverflow.com/questions/35901547/how-can-i-find-a-subsequence-in-a-u8-slice
-fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|window| window == needle)
-}
-
-fn find_float_approx(haystack: &[u8], needle: f32, epsilon: f32) -> Option<usize> {
-    haystack.windows(4).position(|window| {
-        let x = f32::from_le_bytes(window.try_into().unwrap());
-        (x.abs() - needle).abs() <= epsilon
-    })
-}
-
-trait MetaInjestor {
-    fn meta(&mut self, meta: &ReplayMeta) {}
-    fn finish(&self) {}
-}
-
-//fn parse_replay<P: wows_replays::packet2::PacketProcessor + MetaInjestor>(
 fn parse_replay<P: wows_replays::analyzer::AnalyzerBuilder>(
     replay: &std::path::PathBuf,
-    mut processor: P,
+    processor: P,
 ) -> Result<(), wows_replays::ErrorKind> {
     let replay_file = ReplayFile::from_file(replay)?;
 
@@ -111,15 +45,13 @@ fn parse_replay<P: wows_replays::analyzer::AnalyzerBuilder>(
 
     let version_parts: Vec<_> = replay_file.meta.clientVersionFromExe.split(",").collect();
     assert!(version_parts.len() == 4);
-    let build: u32 = version_parts[3].parse().unwrap();
 
     if replay_file.meta.clientVersionFromExe != "0,10,3,3747819" {
         // TODO: Return invalid version error
         return Ok(());
     }
 
-    let mut processor = processor.build(&replay_file.meta);
-    //processor.meta(&replay_file.meta);
+    let processor = processor.build(&replay_file.meta);
 
     // Parse packets
     let mut p = wows_replays::packet2::Parser::new(specs);
@@ -128,32 +60,13 @@ fn parse_replay<P: wows_replays::analyzer::AnalyzerBuilder>(
         &replay_file.packet_data,
         &mut analyzer_set,
     ) {
-        Ok(packets) => {
+        Ok(()) => {
             //processor.finish();
             analyzer_set.finish();
             Ok(())
         }
         Err(e) => Err(e),
     }
-}
-
-fn parse_replay_force_version<F: FnMut(u32, &ReplayMeta, &[Packet])>(
-    version: Option<u32>,
-    replay: &std::path::PathBuf,
-    mut cb: F,
-) -> Result<(), wows_replays::ErrorKind> {
-    let replay_file = ReplayFile::from_file(replay)?;
-
-    let version_parts: Vec<_> = replay_file.meta.clientVersionFromExe.split(",").collect();
-    assert!(version_parts.len() == 4);
-    let build: u32 = version.unwrap_or(version_parts[3].parse().unwrap());
-
-    // Parse packets
-    let packets = parse_packets(build, &replay_file.packet_data)?;
-
-    cb(build, &replay_file.meta, &packets);
-
-    Ok(())
 }
 
 fn truncate_string(s: &str, length: usize) -> &str {
@@ -193,31 +106,6 @@ fn printspecs(specs: &Vec<wows_replays::rpc::entitydefs::EntitySpec>) {
 fn main() {
     /*let specs = parse_scripts(std::path::PathBuf::from("versions/0.10.3/scripts"));
     printspecs(&specs);
-    return;*/
-
-    /*let replay_file = ReplayFile::from_file(&std::path::PathBuf::from(
-        "test/replays/version-3747819.wowsreplay",
-    ))
-    .unwrap();
-
-    let version_parts: Vec<_> = replay_file.meta.clientVersionFromExe.split(",").collect();
-    assert!(version_parts.len() == 4);
-    let build: u32 = version_parts[3].parse().unwrap();
-
-    // Parse packets
-    let mut p = wows_replays::packet2::Parser::new(specs);
-    match p.parse_packets(&replay_file.packet_data) {
-        Ok(packets) => {
-            //cb(build, &replay_file.meta, &packets);
-            for packet in packets.iter() {
-                println!("{:?}", packet);
-            }
-            println!("Parsed {} packets", packets.len());
-        }
-        Err(e) => {
-            println!("Got error parsing!");
-        }
-    }
     return;*/
 
     let replay_arg = Arg::with_name("REPLAY")
@@ -335,214 +223,24 @@ fn main() {
             output: "foo.png".to_string(),
             damages: vec![],
         };*/
-        let mut dump = wows_replays::analyzer::packet_dump::PacketDumpBuilder::new(2431.0);
+        let dump = wows_replays::analyzer::packet_dump::PacketDumpBuilder::new(2431.0);
         //let mut dump = wows_replays::analyzer::damage_trails::DamageTrailsBuilder::new();
         parse_replay(&std::path::PathBuf::from(input), dump).unwrap();
-        return;
-        parse_replay_force_version(
-            if matches.is_present("no-parse-entity") {
-                Some(0)
-            } else {
-                None
-            },
-            &std::path::PathBuf::from(input),
-            |_, meta, packets| {
-                let timestamp_offset: u32 = matches
-                    .value_of("timestamp-offset")
-                    .unwrap_or("0")
-                    .parse()
-                    .expect("Couldn't parse timestamp-offset as float");
-
-                let mut timestamps: Vec<u32> = matches
-                    .value_of("timestamps")
-                    .unwrap_or("")
-                    .split(',')
-                    .map(|x| {
-                        if x.len() == 0 {
-                            // TODO: This is a workaround for empty
-                            return 0;
-                        }
-                        let parts: Vec<&str> = x.split(':').collect();
-                        assert!(parts.len() == 2);
-                        let m: u32 = parts[0].parse().unwrap();
-                        let s: u32 = parts[1].parse().unwrap();
-                        (m * 60 + s) - timestamp_offset
-                    })
-                    .collect();
-                timestamps.sort();
-                if timestamps.len() == 1 && timestamps[0] == 0 {
-                    // TODO: Workaround for empty timestamps specifier
-                    timestamps = vec![];
-                }
-                //println!("{:?}", timestamps);
-
-                #[derive(PartialEq)]
-                enum PacketIdent {
-                    PacketType(u32),
-                    WithSubtype((u32, u32)),
-                };
-
-                let mut exclude_packets: Vec<PacketIdent> = matches
-                    .value_of("exclude-subtypes")
-                    .unwrap_or("")
-                    .split(',')
-                    .map(|x| {
-                        if x.len() == 0 {
-                            // TODO: This is a workaround for empty lists
-                            return PacketIdent::PacketType(0);
-                        }
-                        if x.contains(":") {
-                            let parts: Vec<&str> = x.split(':').collect();
-                            assert!(parts.len() == 2);
-                            let supertype = parts[0].parse().expect("Couldn't parse supertype");
-                            let subtype = parts[1].parse().expect("Couldn't parse subtype");
-                            PacketIdent::WithSubtype((supertype, subtype))
-                        } else {
-                            PacketIdent::PacketType(x.parse().expect("Couldn't parse u32"))
-                        }
-                        //x.parse().expect("Couldn't parse exclude packet")
-                    })
-                    .collect();
-                if exclude_packets.len() == 0 && exclude_packets[0] == PacketIdent::PacketType(0) {
-                    // TODO: This is a workaround for empty lists
-                    exclude_packets = vec![];
-                }
-
-                if !matches.is_present("no-meta") {
-                    println!(
-                        "{}",
-                        serde_json::to_string(&meta).expect("Couldn't JSON-format metadata")
-                    );
-                }
-                let speed: u32 = matches
-                    .value_of("speed")
-                    .map(|x| {
-                        x.parse()
-                            .expect("Couldn't parse speed! Must specify an integer")
-                    })
-                    .unwrap_or(0);
-                let start_tm = std::time::Instant::now();
-                for packet in packets {
-                    if timestamps.len() > 0 && timestamps[0] < packet.clock as u32 {
-                        println!("{{\"clock\":{},\"timestamp\":1}}", packet.clock);
-                        timestamps.remove(0);
-                    }
-                    let superfilter: Option<u32> =
-                        matches.value_of("filter-super").map(|x| x.parse().unwrap());
-                    let subfilter: Option<u32> =
-                        matches.value_of("filter-sub").map(|x| x.parse().unwrap());
-                    match &packet.payload {
-                        PacketType::Entity(p) => {
-                            if let Some(sup) = superfilter {
-                                if p.supertype != sup {
-                                    continue;
-                                }
-                            }
-                            if let Some(sub) = subfilter {
-                                if p.subtype != sub {
-                                    continue;
-                                }
-                            }
-                        }
-                        _ => match (superfilter, subfilter) {
-                            (None, None) => {}
-                            _ => {
-                                continue;
-                            }
-                        },
-                    };
-                    /*if exclude_packets.len() > 0 {
-                        let packet_type = if packet.packet_type == 7 || packet.packet_type == 8 {
-                            match &packet.payload {
-                                PacketType::Entity(p) => {
-                                    PacketIdent::WithSubtype((p.supertype, p.subtype))
-                                }
-                                _ => {
-                                    // Skip known packets
-                                    continue;
-                                }
-                            }
-                        } else {
-                            PacketIdent::PacketType(packet.packet_type)
-                        };
-                        if exclude_packets.contains(&packet_type) {
-                            continue;
-                        }
-                    }*/
-                    if speed > 0 {
-                        let current_tm = start_tm.elapsed().as_secs_f32() * speed as f32;
-                        if packet.clock > current_tm {
-                            let millis = (packet.clock - current_tm) * 1000.0;
-                            //println!("Sleeping for {}", millis);
-                            std::thread::sleep(std::time::Duration::from_millis(millis as u64));
-                        }
-                    }
-                    if matches.is_present("xxd") {
-                        println!("clock={} type=0x{:x}", packet.clock, packet.packet_type);
-                        hexdump::hexdump(packet.raw);
-                        match &packet.payload {
-                            PacketType::Unknown(_) => {
-                                // Wasn't parsed, don't print the serialization
-                            }
-                            payload => {
-                                println!("Deserialized as:");
-                                println!("{:?}", payload);
-                            }
-                        }
-                        println!();
-                    } else {
-                        let s = serde_json::to_string(&packet)
-                            .expect("Couldn't JSON-format serialize packet");
-                        println!("{}", s);
-                    }
-                }
-            },
-        )
-        .unwrap();
     }
     if let Some(matches) = matches.subcommand_matches("summary") {
         let input = matches.value_of("REPLAY").unwrap();
-        /*parse_replay(&std::path::PathBuf::from(input), |_, meta, packets| {
-            println!("Username: {}", meta.playerName);
-            println!("Date/time: {}", meta.dateTime);
-            println!("Map: {}", meta.mapDisplayName);
-            println!("Vehicle: {}", meta.playerVehicle);
-            println!("Game mode: {} {}", meta.name, meta.gameLogic);
-            println!("Game version: {}", meta.clientVersionFromExe);
-            println!();
-            // TODO: Update to packet2
-            //print_summary(packets);
-        })
-        .unwrap();*/
-        //let mut dump = Summarizer { meta: None };
-        let mut dump = wows_replays::analyzer::summary::SummaryBuilder::new();
+        let dump = wows_replays::analyzer::summary::SummaryBuilder::new();
         parse_replay(&std::path::PathBuf::from(input), dump).unwrap();
     }
     if let Some(matches) = matches.subcommand_matches("chat") {
         let input = matches.value_of("REPLAY").unwrap();
-        /*parse_replay(&std::path::PathBuf::from(input), |_, _, packets| {
-            print_chatlog(packets);
-        })
-        .unwrap();*/
-        let mut chatlogger = wows_replays::analyzer::chat::ChatLoggerBuilder::new();
+        let chatlogger = wows_replays::analyzer::chat::ChatLoggerBuilder::new();
         parse_replay(&std::path::PathBuf::from(input), chatlogger).unwrap();
     }
     if let Some(matches) = matches.subcommand_matches("trace") {
         let input = matches.value_of("REPLAY").unwrap();
         let output = matches.value_of("out").unwrap();
-        /*parse_replay(&std::path::PathBuf::from(input), |_, meta, packets| {
-            // TODO: Update to packet2
-            //render_trails(meta, packets, output);
-        })
-        .unwrap();*/
-        /*let mut trailer = TrailRenderer {
-            usernames: HashMap::new(),
-            player_trail: vec![],
-            trails: HashMap::new(),
-            output: output.to_string(),
-            meta: None,
-        };*/
-        let mut trailer = wows_replays::analyzer::trails::TrailsBuilder::new(output);
+        let trailer = wows_replays::analyzer::trails::TrailsBuilder::new(output);
         parse_replay(&std::path::PathBuf::from(input), trailer).unwrap();
     }
     if let Some(matches) = matches.subcommand_matches("survey") {

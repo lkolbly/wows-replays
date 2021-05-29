@@ -1,5 +1,5 @@
 //use crate::script_type::TypeAliases;
-use crate::rpc::typedefs::{parse_aliases, parse_type, ArgType, ArgValue, TypeAliases};
+use crate::rpc::typedefs::{parse_aliases, parse_type, ArgType, TypeAliases};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Flags {
@@ -279,7 +279,7 @@ pub fn parse_scripts(gamedata: &crate::version::Datafiles) -> Vec<EntitySpec> {
             child.tag_name().name()
         ));
         let mut def = parse_def(def_path, &aliases);
-        let mut inherits = def
+        let inherits = def
             .implements
             .iter()
             .map(|parent| {

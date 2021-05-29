@@ -10,7 +10,7 @@ pub mod version;
 mod wowsreplay;
 
 pub use error::*;
-pub use packet::*;
+//pub use packet::*;
 //pub use scripts::*;
 pub use rpc::entitydefs::parse_scripts;
 pub use wowsreplay::*;
