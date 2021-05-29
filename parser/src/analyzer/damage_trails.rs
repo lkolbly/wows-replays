@@ -58,9 +58,14 @@ struct DamageMonitor {
 
 impl Analyzer for DamageMonitor {
     fn finish(&self) {
+        let start = std::time::Instant::now();
+
         // Setup the render context
         let root = BitMapBackend::new(&self.output, (2048, 2048)).into_drawing_area();
         root.fill(&BLACK).unwrap();
+
+        println!("Black fill time = {:?}", start.elapsed());
+        let start = std::time::Instant::now();
 
         // Blit the background into the image
         {
@@ -88,6 +93,9 @@ impl Analyzer for DamageMonitor {
             )
             .unwrap();
 
+            println!("Minimap load time = {:?}", start.elapsed());
+            let start = std::time::Instant::now();
+
             let mut image = RgbImage::new(760, 760);
             for x in 0..760 {
                 for y in 0..760 {
@@ -98,6 +106,10 @@ impl Analyzer for DamageMonitor {
                     image.put_pixel(x, y, bg.to_rgb());
                 }
             }
+
+            println!("Minimap 760px fill time = {:?}", start.elapsed());
+            let start = std::time::Instant::now();
+
             let image = image::DynamicImage::ImageRgb8(image);
             let image = image.resize_exact(2048, 2048, FilterType::Lanczos3);
 
@@ -109,7 +121,11 @@ impl Analyzer for DamageMonitor {
 
             let elem: BitMapElement<_> = ((0.0, 1.0), image).into();
             ctx.draw_series(std::iter::once(elem)).unwrap();
+
+            println!("Resize time = {:?}", start.elapsed());
         }
+
+        let start = std::time::Instant::now();
 
         // Render the actual trails
 
@@ -200,6 +216,7 @@ impl Analyzer for DamageMonitor {
                 )])
                 .unwrap();
         }
+        println!("Trail render time = {:?}", start.elapsed());
     }
 
     fn process(&mut self, packet: &Packet<'_, '_>) {
