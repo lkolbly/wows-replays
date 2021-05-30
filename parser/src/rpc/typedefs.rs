@@ -4,6 +4,7 @@ use nom::{
     bytes::complete::take, number::complete::le_f32, number::complete::le_f64,
     number::complete::le_u16, number::complete::le_u32,
 };
+use serde::ser::{SerializeMap, SerializeSeq, SerializeStruct, SerializeTuple};
 use serde_derive::Serialize;
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -156,7 +157,7 @@ pub enum ArgType {
     Tuple((Box<ArgType>, usize)),
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ArgValue<'argtype> {
     Uint8(u8),
     Uint16(u16),
@@ -177,6 +178,65 @@ pub enum ArgValue<'argtype> {
     FixedDict(HashMap<&'argtype str, ArgValue<'argtype>>),
     NullableFixedDict(Option<HashMap<&'argtype str, ArgValue<'argtype>>>),
     Tuple(Vec<ArgValue<'argtype>>),
+}
+
+impl<'argtype> serde::Serialize for ArgValue<'argtype> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        //serializer.serialize_i32(5)
+        match self {
+            Self::Uint8(i) => serializer.serialize_u8(*i),
+            Self::Uint16(i) => serializer.serialize_u16(*i),
+            Self::Uint32(i) => serializer.serialize_u32(*i),
+            Self::Uint64(i) => serializer.serialize_u64(*i),
+            Self::Int8(i) => serializer.serialize_i8(*i),
+            Self::Int16(i) => serializer.serialize_i16(*i),
+            Self::Int32(i) => serializer.serialize_i32(*i),
+            Self::Int64(i) => serializer.serialize_i64(*i),
+            Self::Float32(f) => serializer.serialize_f32(*f),
+            Self::Float64(f) => serializer.serialize_f64(*f),
+            Self::Vector2((x, y)) => {
+                let mut tup = serializer.serialize_tuple(2)?;
+                tup.serialize_element(x)?;
+                tup.serialize_element(y)?;
+                tup.end()
+            }
+            Self::Vector3((x, y, z)) => {
+                let mut tup = serializer.serialize_tuple(3)?;
+                tup.serialize_element(x)?;
+                tup.serialize_element(y)?;
+                tup.serialize_element(z)?;
+                tup.end()
+            }
+            Self::String(s) => serializer.serialize_bytes(&s),
+            Self::UnicodeString(s) => serializer.serialize_bytes(&s),
+            Self::Blob(s) => serializer.serialize_bytes(&s), // TODO: Try pickle-decoding this
+            Self::Array(a) => {
+                let mut seq = serializer.serialize_seq(Some(a.len()))?;
+                for element in a.iter() {
+                    seq.serialize_element(element)?;
+                }
+                seq.end()
+            }
+            Self::FixedDict(d) => {
+                let mut obj = serializer.serialize_map(Some(d.len()))?;
+                for (k, v) in d.iter() {
+                    obj.serialize_entry(k, v)?;
+                }
+                obj.end()
+            }
+            Self::NullableFixedDict(Some(d)) => {
+                let mut obj = serializer.serialize_map(Some(d.len()))?;
+                for (k, v) in d.iter() {
+                    obj.serialize_entry(k, v)?;
+                }
+                obj.end()
+            }
+            Self::NullableFixedDict(None) => serializer.serialize_none(),
+            Self::Tuple(t) => {
+                unimplemented!();
+            }
+        }
+    }
 }
 
 const INFINITY: usize = 0xffff;

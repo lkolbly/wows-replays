@@ -97,7 +97,7 @@ enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
     Ribbon(Ribbon),
     Position(crate::packet2::PositionPacket),
     PlayerOrientation(crate::packet2::PlayerOrientationPacket),
-    DamageStat(HashMap<(i64, i64), (i64, f64)>),
+    DamageStat(Vec<((i64, i64), (i64, f64))>),
     ShipDestroyed {
         killer: i32,
         victim: i32,
@@ -263,7 +263,7 @@ impl Analyzer for Decoder {
                     })
                     .unwrap();
 
-                    let mut stats = HashMap::new();
+                    let mut stats = vec![];
                     match value {
                         serde_pickle::value::Value::Dict(d) => {
                             for (k, v) in d.iter() {
@@ -308,7 +308,7 @@ impl Analyzer for Decoder {
                                 // (1,3) is (# artillery fired, total possible damage) ?
                                 // (2, 0) is (# HE penetrations, total HE damage)
                                 // (17, 0) is (# fire tick marks, total fire damage)
-                                stats.insert(k, v);
+                                stats.push((k, v));
                             }
                         }
                         _ => panic!("foo"),
