@@ -6,6 +6,7 @@ use nom::{
 };
 use serde_derive::Serialize;
 use std::collections::HashMap;
+use std::convert::TryInto;
 
 pub type TypeAliases = HashMap<String, ArgType>;
 
@@ -387,6 +388,97 @@ pub fn parse_aliases(file: &std::path::PathBuf) -> HashMap<String, ArgType> {
     aliases
 }
 
+macro_rules! into_unwrappable_type {
+    ($t: ty, $tag: path) => {
+        impl<'a> std::convert::TryInto<$t> for &ArgValue<'a> {
+            type Error = ();
+
+            fn try_into(self) -> Result<$t, Self::Error> {
+                match self {
+                    $tag(i) => Ok(*i),
+                    _ => Err(()),
+                }
+            }
+        }
+    };
+}
+
+into_unwrappable_type!(u8, ArgValue::Uint8);
+into_unwrappable_type!(u16, ArgValue::Uint16);
+into_unwrappable_type!(u32, ArgValue::Uint32);
+into_unwrappable_type!(u64, ArgValue::Uint64);
+into_unwrappable_type!(i8, ArgValue::Int8);
+into_unwrappable_type!(i16, ArgValue::Int16);
+into_unwrappable_type!(i32, ArgValue::Int32);
+into_unwrappable_type!(i64, ArgValue::Int64);
+
+/*impl<'a> std::convert::TryInto<u8> for &ArgValue<'a> {
+    type Error = ();
+
+    fn try_into(self) -> Result<u8, Self::Error> {
+        match self {
+            ArgValue::Uint8(i) => Ok(*i),
+            _ => Err(()),
+        }
+    }
+}
+
+impl<'a> std::convert::TryInto<u16> for &ArgValue<'a> {
+    type Error = ();
+
+    fn try_into(self) -> Result<u16, Self::Error> {
+        match self {
+            ArgValue::Uint16(i) => Ok(*i),
+            _ => Err(()),
+        }
+    }
+}
+
+impl<'a> std::convert::TryInto<i32> for &ArgValue<'a> {
+    type Error = ();
+
+    fn try_into(self) -> Result<i32, Self::Error> {
+        match self {
+            ArgValue::Int32(i) => Ok(*i),
+            _ => Err(()),
+        }
+    }
+}*/
+
+impl<'a, 'b, T> std::convert::TryFrom<&'b ArgValue<'a>> for Vec<T>
+where
+    &'b ArgValue<'a>: std::convert::TryInto<T, Error = ()>,
+    //<&'b ArgValue<'a> as std::convert::TryInto<T>>::Error: std::fmt::Debug,
+{
+    type Error = ();
+
+    fn try_from(value: &'b ArgValue<'a>) -> Result<Self, Self::Error> {
+        match value {
+            ArgValue::Array(v) => {
+                let result: Result<Vec<T>, Self::Error> = v.iter().map(|x| x.try_into()).collect();
+                result
+            }
+            _ => Err(()),
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! unpack_rpc_args {
+    ($args: ident, $($t: ty),+) => {
+        {
+            let mut i = 0;
+            ($({
+                println!("{:?}", $args[i]);
+                //let x: $t = (&$args[i]).try_into().unwrap();
+                let x: $t = <&crate::rpc::typedefs::ArgValue as std::convert::TryInto<$t>>::try_into(&$args[i]).unwrap();
+                i += 1;
+                x
+            }),+,)
+        }
+    };
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -527,5 +619,28 @@ mod test {
             data,
             ArgValue::Array(vec![ArgValue::Uint16(1), ArgValue::Uint16(3)])
         );
+    }
+
+    #[test]
+    fn test_unpacker_macro_single() {
+        let args = vec![ArgValue::Uint8(5)];
+        let (u8_arg,) = unpack_rpc_args!(args, u8);
+        assert_eq!(u8_arg, 5);
+    }
+
+    #[test]
+    fn test_unpacker_macro() {
+        let args = vec![
+            ArgValue::Uint8(5),
+            ArgValue::Int32(-54),
+            ArgValue::Array(vec![ArgValue::Uint16(1), ArgValue::Uint16(3)]),
+            //ArgValue::NullableFixedDict(None),
+            //ArgValue::NullableFixedDict(Some(HashMap::new())),
+            //ArgValue::String("Hello, world!".to_string()),
+        ];
+        let args = unpack_rpc_args!(args, u8, i32, Vec<u16>);
+        assert_eq!(args.0, 5);
+        assert_eq!(args.1, -54);
+        assert_eq!(args.2, vec![1, 3]);
     }
 }
