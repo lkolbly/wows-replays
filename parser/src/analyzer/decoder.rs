@@ -1,6 +1,7 @@
 use crate::analyzer::{Analyzer, AnalyzerBuilder};
 use crate::packet2::{EntityMethodPacket, Packet, PacketType};
 use crate::unpack_rpc_args;
+use serde_derive::Serialize;
 use std::collections::HashMap;
 
 pub struct DecoderBuilder {}
@@ -17,7 +18,7 @@ impl AnalyzerBuilder for DecoderBuilder {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize)]
 pub enum VoiceLine {
     IntelRequired,
     FairWinds,
@@ -40,20 +41,70 @@ pub enum VoiceLine {
     ConcentrateFire(i32),
 }
 
-#[derive(Debug)]
-enum DecodedPacket<'a, 'b, 'c> {
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize)]
+pub enum Ribbon {
+    PlaneShotDown,
+    Incapacitation,
+    SetFire,
+    Citadel,
+    SecondaryHit,
+    OverPenetration,
+    Penetration,
+    NonPenetration,
+    Ricochet,
+    TorpedoProtectionHit,
+    Captured,
+    AssistedInCapture,
+    Spotted,
+    Destroyed,
+    TorpedoHit,
+    Defended,
+    Flooding,
+    DiveBombPenetration,
+    RocketPenetration,
+    RocketNonPenetration,
+    RocketTorpedoProtectionHit,
+    ShotDownByAircraft,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize)]
+pub enum DeathCause {
+    Secondaries,
+    Artillery,
+    Fire,
+    Flooding,
+    Torpedo,
+    DiveBomber,
+    AerialRocket,
+    AerialTorpedo,
+    Detonation,
+    Ramming,
+}
+
+#[derive(Debug, Serialize)]
+enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
     Chat {
         entity_id: u32, // TODO: Is entity ID different than sender ID?
         sender_id: i32,
-        audience: &'a str,
-        message: &'a str,
+        audience: &'replay str,
+        message: &'replay str,
     },
     VoiceLine {
         sender_id: i32,
         is_global: bool,
         message: VoiceLine,
     },
-    Other(&'c Packet<'a, 'b>),
+    Ribbon(Ribbon),
+    Position(crate::packet2::PositionPacket),
+    PlayerOrientation(crate::packet2::PlayerOrientationPacket),
+    DamageStat(HashMap<(i64, i64), (i64, f64)>),
+    ShipDestroyed {
+        killer: i32,
+        victim: i32,
+        cause: DeathCause,
+    },
+    EntityMethod(&'rawpacket EntityMethodPacket<'argtype>),
+    Other(&'rawpacket PacketType<'replay, 'argtype>),
     /*Position(PositionPacket),
     Entity(EntityPacket<'a>), // 0x7 and 0x8 are known to be of this type
     Chat(ChatPacket<'a>),
@@ -71,6 +122,15 @@ enum DecodedPacket<'a, 'b, 'c> {
 
     /// These are packets which we thought we understood, but couldn't parse
     Invalid(InvalidPacket<'a>),*/
+}
+
+#[derive(Debug, Serialize)]
+struct DecodedPacket<'replay, 'argtype, 'rawpacket> {
+    //pub packet_size: u32,
+    //pub packet_type: u32,
+    pub clock: f32,
+    pub payload: DecodedPacketPayload<'replay, 'argtype, 'rawpacket>,
+    //pub raw: &'a [u8],
 }
 
 struct Decoder {}
@@ -104,19 +164,12 @@ impl Analyzer for Decoder {
                         crate::rpc::typedefs::ArgValue::Int32(i) => i,
                         _ => panic!("foo"),
                     };
-                    DecodedPacket::Chat {
+                    DecodedPacketPayload::Chat {
                         entity_id: *entity_id,
                         sender_id: *sender_id,
                         audience: std::str::from_utf8(&target).unwrap(),
                         message: std::str::from_utf8(&message).unwrap(),
                     }
-                /*println!(
-                    "{}: {}: {} {}",
-                    clock,
-                    self.usernames.get(sender_id).unwrap(),
-                    std::str::from_utf8(&target).unwrap(),
-                    std::str::from_utf8(&message).unwrap()
-                );*/
                 } else if *method == "receive_CommonCMD" {
                     let (audience, sender_id, line, a, b) =
                         unpack_rpc_args!(args, u8, i32, u8, u32, u64);
@@ -152,7 +205,7 @@ impl Analyzer for Decoder {
                         }
                     };
 
-                    DecodedPacket::VoiceLine {
+                    DecodedPacketPayload::VoiceLine {
                         sender_id,
                         is_global,
                         message,
@@ -202,27 +255,146 @@ impl Analyzer for Decoder {
                         }
                         println!("found {} players", players.len());
                     }
-                    DecodedPacket::Other(packet)
+                    DecodedPacketPayload::Other(&packet.payload)
                 } else if *method == "receiveDamageStat" {
-                    DecodedPacket::Other(packet)
+                    let value = serde_pickle::de::value_from_slice(match &args[0] {
+                        crate::rpc::typedefs::ArgValue::Blob(x) => x,
+                        _ => panic!("foo"),
+                    })
+                    .unwrap();
+
+                    let mut stats = HashMap::new();
+                    match value {
+                        serde_pickle::value::Value::Dict(d) => {
+                            for (k, v) in d.iter() {
+                                let k = match k {
+                                    serde_pickle::value::HashableValue::Tuple(t) => {
+                                        assert!(t.len() == 2);
+                                        (
+                                            match t[0] {
+                                                serde_pickle::value::HashableValue::I64(i) => i,
+                                                _ => panic!("foo"),
+                                            },
+                                            match t[1] {
+                                                serde_pickle::value::HashableValue::I64(i) => i,
+                                                _ => panic!("foo"),
+                                            },
+                                        )
+                                    }
+                                    _ => panic!("foo"),
+                                };
+                                let v = match v {
+                                    serde_pickle::value::Value::List(t) => {
+                                        assert!(t.len() == 2);
+                                        (
+                                            match t[0] {
+                                                serde_pickle::value::Value::I64(i) => i,
+                                                _ => panic!("foo"),
+                                            },
+                                            match t[1] {
+                                                serde_pickle::value::Value::F64(i) => i,
+                                                // TODO: This appears in the (17,2) key,
+                                                // it is unknown what it means
+                                                serde_pickle::value::Value::I64(i) => i as f64,
+                                                _ => panic!("foo"),
+                                            },
+                                        )
+                                    }
+                                    _ => panic!("foo"),
+                                };
+                                //println!("{:?}: {:?}", k, v);
+
+                                // The (1,0) key is (# AP hits that dealt damage, total AP damage dealt)
+                                // (1,3) is (# artillery fired, total possible damage) ?
+                                // (2, 0) is (# HE penetrations, total HE damage)
+                                // (17, 0) is (# fire tick marks, total fire damage)
+                                stats.insert(k, v);
+                            }
+                        }
+                        _ => panic!("foo"),
+                    }
+                    DecodedPacketPayload::DamageStat(stats)
+                } else if *method == "receiveVehicleDeath" {
+                    let (victim, killer, cause) = unpack_rpc_args!(args, i32, i32, u32);
+                    let cause = match cause {
+                        2 => DeathCause::Secondaries,
+                        3 => DeathCause::Torpedo,
+                        4 => DeathCause::DiveBomber,
+                        5 => DeathCause::AerialTorpedo,
+                        6 => DeathCause::Fire,
+                        7 => DeathCause::Ramming,
+                        9 => DeathCause::Flooding,
+                        14 => DeathCause::AerialRocket,
+                        15 => DeathCause::Detonation,
+                        17 => DeathCause::Artillery,
+                        18 => DeathCause::Artillery,
+                        19 => DeathCause::Artillery,
+                        _ => {
+                            panic!(format!("Found unknown death_cause {}", cause));
+                        }
+                    };
+                    DecodedPacketPayload::ShipDestroyed {
+                        victim,
+                        killer,
+                        cause,
+                    }
                 } else if *method == "receiveDamageReport" {
-                    DecodedPacket::Other(packet)
+                    DecodedPacketPayload::Other(&packet.payload)
                 } else if *method == "receiveDamagesOnShip" {
-                    DecodedPacket::Other(packet)
+                    DecodedPacketPayload::Other(&packet.payload)
                 } else if *method == "receiveArtilleryShots" {
-                    DecodedPacket::Other(packet)
+                    DecodedPacketPayload::Other(&packet.payload)
                 } else if *method == "receiveHitLocationsInitialState" {
-                    DecodedPacket::Other(packet)
+                    DecodedPacketPayload::Other(&packet.payload)
                 } else if *method == "onRibbon" {
-                    DecodedPacket::Other(packet)
+                    let (ribbon,) = unpack_rpc_args!(args, i8);
+                    let ribbon = match ribbon {
+                        1 => Ribbon::TorpedoHit,
+                        3 => Ribbon::PlaneShotDown,
+                        4 => Ribbon::Incapacitation,
+                        5 => Ribbon::Destroyed,
+                        6 => Ribbon::SetFire,
+                        7 => Ribbon::Flooding,
+                        8 => Ribbon::Citadel,
+                        9 => Ribbon::Defended,
+                        10 => Ribbon::Captured,
+                        11 => Ribbon::AssistedInCapture,
+                        13 => Ribbon::SecondaryHit,
+                        14 => Ribbon::OverPenetration,
+                        15 => Ribbon::Penetration,
+                        16 => Ribbon::NonPenetration,
+                        17 => Ribbon::Ricochet,
+                        19 => Ribbon::Spotted,
+                        21 => Ribbon::DiveBombPenetration,
+                        25 => Ribbon::RocketPenetration,
+                        26 => Ribbon::RocketNonPenetration,
+                        27 => Ribbon::ShotDownByAircraft,
+                        28 => Ribbon::TorpedoProtectionHit,
+                        30 => Ribbon::RocketTorpedoProtectionHit,
+                        _ => {
+                            panic!("Unrecognized ribbon {}", ribbon);
+                        }
+                    };
+                    DecodedPacketPayload::Ribbon(ribbon)
                 } else {
-                    DecodedPacket::Other(packet)
+                    //DecodedPacketPayload::Other(&packet.payload)
+                    DecodedPacketPayload::EntityMethod(match &packet.payload {
+                        PacketType::EntityMethod(em) => em,
+                        _ => panic!(),
+                    })
                 }
             }
-            PacketType::Position(pos) => DecodedPacket::Other(packet),
-            PacketType::PlayerOrientation(pos) => DecodedPacket::Other(packet),
-            _ => DecodedPacket::Other(packet),
+            PacketType::Position(pos) => DecodedPacketPayload::Position((*pos).clone()),
+            PacketType::PlayerOrientation(pos) => {
+                DecodedPacketPayload::PlayerOrientation((*pos).clone())
+            }
+            _ => DecodedPacketPayload::Other(&packet.payload),
         };
-        println!("{:#?}", decoded);
+        let decoded = DecodedPacket {
+            clock: packet.clock,
+            payload: decoded,
+        };
+        //println!("{:#?}", decoded);
+        println!("{}", serde_json::to_string_pretty(&decoded).unwrap());
     }
 }

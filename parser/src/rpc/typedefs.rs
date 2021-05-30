@@ -42,7 +42,10 @@ pub enum PrimitiveType {
 }
 
 impl PrimitiveType {
-    fn parse_value<'a>(&self, i: &'a [u8]) -> IResult<&'a [u8], ArgValue> {
+    fn parse_value<'replay, 'argtype>(
+        &'argtype self,
+        i: &'replay [u8],
+    ) -> IResult<&'replay [u8], ArgValue<'argtype>> {
         match self {
             PrimitiveType::Uint8 => {
                 let (i, v) = le_u8(i)?;
@@ -154,7 +157,7 @@ pub enum ArgType {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
-pub enum ArgValue<'b> {
+pub enum ArgValue<'argtype> {
     Uint8(u8),
     Uint16(u16),
     Uint32(u32),
@@ -170,10 +173,10 @@ pub enum ArgValue<'b> {
     String(Vec<u8>),
     UnicodeString(Vec<u8>),
     Blob(Vec<u8>),
-    Array(Vec<ArgValue<'b>>),
-    FixedDict(HashMap<&'b str, ArgValue<'b>>),
-    NullableFixedDict(Option<HashMap<&'b str, ArgValue<'b>>>),
-    Tuple(Vec<ArgValue<'b>>),
+    Array(Vec<ArgValue<'argtype>>),
+    FixedDict(HashMap<&'argtype str, ArgValue<'argtype>>),
+    NullableFixedDict(Option<HashMap<&'argtype str, ArgValue<'argtype>>>),
+    Tuple(Vec<ArgValue<'argtype>>),
 }
 
 const INFINITY: usize = 0xffff;

@@ -11,7 +11,7 @@ use crate::error::*;
 use crate::rpc::entitydefs::*;
 use crate::rpc::typedefs::ArgValue;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct PositionPacket {
     pub pid: u32,
     pub x: f32,
@@ -27,11 +27,11 @@ pub struct PositionPacket {
 }
 
 #[derive(Debug, Serialize)]
-pub struct EntityPacket<'a> {
+pub struct EntityPacket<'replay> {
     pub supertype: u32,
     pub entity_id: u32,
     pub subtype: u32,
-    pub payload: &'a [u8],
+    pub payload: &'replay [u8],
 }
 
 /*#[derive(Debug, Serialize)]
@@ -41,10 +41,10 @@ pub struct ParsedEntityProperty {
 }*/
 
 #[derive(Debug, Serialize)]
-pub struct EntityPropertyPacket<'b> {
+pub struct EntityPropertyPacket<'argtype> {
     pub entity_id: u32,
-    pub property: &'b str,
-    pub value: ArgValue<'b>,
+    pub property: &'argtype str,
+    pub value: ArgValue<'argtype>,
 }
 
 /*#[derive(Debug, Serialize)]
@@ -54,14 +54,14 @@ pub struct ParsedEntityMethodCall {
 }*/
 
 #[derive(Debug, Serialize)]
-pub struct EntityMethodPacket<'b> {
+pub struct EntityMethodPacket<'argtype> {
     pub entity_id: u32,
-    pub method: &'b str,
-    pub args: Vec<ArgValue<'b>>,
+    pub method: &'argtype str,
+    pub args: Vec<ArgValue<'argtype>>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct EntityCreatePacket<'b> {
+pub struct EntityCreatePacket<'argtype> {
     pub entity_id: u32,
     pub entity_type: u16,
     pub vehicle_id: u32,
@@ -74,14 +74,14 @@ pub struct EntityCreatePacket<'b> {
     pub dir_z: f32,
     pub unknown: u32,
     //pub state: &'a [u8],
-    pub props: HashMap<&'b str, crate::rpc::typedefs::ArgValue<'b>>,
+    pub props: HashMap<&'argtype str, crate::rpc::typedefs::ArgValue<'argtype>>,
 }
 
 /// Note that this packet frequently appears twice - it appears that it
 /// describes both the player's boat location/orientation as well as the
 /// camera orientation. When the camera is attached to an object, the ID of
 /// that object will be given in the parent_id field.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct PlayerOrientationPacket {
     pub pid: u32,
     pub parent_id: u32,
@@ -107,10 +107,10 @@ pub struct InvalidPacket<'a> {
 }
 
 #[derive(Debug, Serialize)]
-pub struct BasePlayerCreatePacket<'a> {
+pub struct BasePlayerCreatePacket<'replay> {
     pub entity_id: u32,
     pub entity_type: u16,
-    pub state: &'a [u8],
+    pub state: &'replay [u8],
 }
 
 #[derive(Debug, Serialize)]
@@ -121,14 +121,14 @@ pub struct Vector3 {
 }
 
 #[derive(Debug, Serialize)]
-pub struct CellPlayerCreatePacket<'a> {
+pub struct CellPlayerCreatePacket<'replay> {
     pub entity_id: u32,
     pub space_id: u32,
     pub unknown: u16,
     pub vehicle_id: u32,
     pub position: Vector3,
     pub direction: Vector3,
-    pub value: &'a [u8],
+    pub value: &'replay [u8],
 }
 
 #[derive(Debug, Serialize)]
@@ -144,15 +144,15 @@ pub struct EntityEnterPacket {
 }
 
 #[derive(Debug, Serialize)]
-pub enum PacketType<'a, 'b> {
+pub enum PacketType<'replay, 'argtype> {
     Position(PositionPacket),
-    BasePlayerCreate(BasePlayerCreatePacket<'a>),
-    CellPlayerCreate(CellPlayerCreatePacket<'a>),
+    BasePlayerCreate(BasePlayerCreatePacket<'replay>),
+    CellPlayerCreate(CellPlayerCreatePacket<'replay>),
     EntityEnter(EntityEnterPacket),
     EntityLeave(EntityLeavePacket),
-    EntityCreate(EntityCreatePacket<'b>),
-    EntityProperty(EntityPropertyPacket<'b>),
-    EntityMethod(EntityMethodPacket<'b>),
+    EntityCreate(EntityCreatePacket<'argtype>),
+    EntityProperty(EntityPropertyPacket<'argtype>),
+    EntityMethod(EntityMethodPacket<'argtype>),
     //Entity(EntityPacket<'a>), // 0x7 and 0x8 are known to be of this type
     //Chat(ChatPacket<'a>),
     //Timing(TimingPacket),
@@ -165,19 +165,19 @@ pub enum PacketType<'a, 'b> {
     //Setup(SetupPacket),
     //ShipDestroyed(ShipDestroyedPacket),
     //VoiceLine(VoiceLinePacket),
-    Unknown(&'a [u8]),
+    Unknown(&'replay [u8]),
 
     /// These are packets which we thought we understood, but couldn't parse
-    Invalid(InvalidPacket<'a>),
+    Invalid(InvalidPacket<'replay>),
 }
 
 #[derive(Debug, Serialize)]
-pub struct Packet<'a, 'b> {
+pub struct Packet<'replay, 'argtype> {
     pub packet_size: u32,
     pub packet_type: u32,
     pub clock: f32,
-    pub payload: PacketType<'a, 'b>,
-    pub raw: &'a [u8],
+    pub payload: PacketType<'replay, 'argtype>,
+    pub raw: &'replay [u8],
 }
 
 pub struct Parser {
