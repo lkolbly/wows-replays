@@ -1,6 +1,9 @@
-use crate::error::Error;
+use crate::error::ErrorKind;
+use rust_embed::RustEmbed;
+use std::borrow::Cow;
 use std::path::PathBuf;
 
+#[derive(Debug)]
 pub struct Version {
     major: u32,
     minor: u32,
@@ -23,20 +26,52 @@ impl Version {
     }
 }
 
+#[derive(RustEmbed)]
+#[folder = "../versions/"]
+struct Embedded;
+
 pub struct Datafiles {
     base_path: PathBuf,
     version: Version,
 }
 
 impl Datafiles {
-    pub fn new(base: PathBuf, version: Version) -> Datafiles {
-        Datafiles {
-            base_path: base,
-            version,
+    pub fn new(base: PathBuf, version: Version) -> Result<Datafiles, ErrorKind> {
+        let mut p = base.clone();
+        p.push(version.to_path());
+        if !p.exists() {
+            Err(ErrorKind::UnsupportedReplayVersion(version.patch))
+        } else {
+            Ok(Datafiles {
+                base_path: base,
+                version,
+            })
         }
     }
 
-    pub fn lookup(&self, path: &str) -> PathBuf {
+    pub fn get(&self, path: &str) -> Result<Cow<'static, [u8]>, ErrorKind> {
+        let mut p = self.base_path.clone();
+        p.push(self.version.to_path());
+        p.push(path);
+        if !p.exists() || true {
+            let p = format!("{}/{}", self.version.to_path(), path);
+            if let Some(x) = Embedded::get(&p) {
+                return Ok(x);
+            }
+            return Err(ErrorKind::DatafileNotFound {
+                version: format!("{:?}", self.version),
+                path: path.to_string(),
+            });
+            /*panic!(
+                "Could not find file {} for version {}",
+                path,
+                self.version.to_path()
+            );*/
+        }
+        Ok(Cow::from(std::fs::read(p).unwrap()))
+    }
+
+    /*pub fn lookup(&self, path: &str) -> PathBuf {
         let mut p = self.base_path.clone();
         p.push(self.version.to_path());
         p.push(path);
@@ -48,5 +83,5 @@ impl Datafiles {
             );
         }
         p
-    }
+    }*/
 }

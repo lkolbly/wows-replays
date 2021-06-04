@@ -32,6 +32,19 @@ pub enum ErrorKind {
         reason: String,
         packet: Vec<u8>,
     },
+    #[error("Could not parse RPC value")]
+    UnableToParseRpcValue {
+        method: String,
+        argnum: usize,
+        argtype: String,
+        packet: Vec<u8>,
+    },
+    #[error("Unknown FixedDict flag")]
+    UnknownFixedDictFlag { flag: u8, packet: Vec<u8> },
+    #[error("Data file not found")]
+    DatafileNotFound { version: String, path: String },
+    #[error("Decoder ring failure")]
+    DecoderRingFailure(String),
     #[error("Unable to process packet")]
     ParsingFailure(String),
 }

@@ -184,8 +184,9 @@ fn parse_method_list(mlist: &roxmltree::Node, aliases: &TypeAliases) -> Vec<Meth
     methods
 }
 
-fn parse_def(file: std::path::PathBuf, aliases: &TypeAliases) -> DefFile {
-    let def = std::fs::read_to_string(&file).unwrap();
+fn parse_def(def: &[u8], aliases: &TypeAliases) -> DefFile {
+    let def = std::str::from_utf8(def).unwrap();
+    //let def = std::fs::read_to_string(&file).unwrap();
     let doc = roxmltree::Document::parse(&def).unwrap();
     let root = doc.root();
     let root = child_by_name(&root, "root").unwrap();
@@ -253,14 +254,18 @@ fn parse_def(file: std::path::PathBuf, aliases: &TypeAliases) -> DefFile {
     DefFile { implements }*/
 }
 
-pub fn parse_scripts(gamedata: &crate::version::Datafiles) -> Vec<EntitySpec> {
-    let alias_path = gamedata.lookup("scripts/entity_defs/alias.xml");
+pub fn parse_scripts(
+    gamedata: &crate::version::Datafiles,
+) -> Result<Vec<EntitySpec>, crate::error::ErrorKind> {
+    /*let alias_path = gamedata.lookup("scripts/entity_defs/alias.xml");
 
-    let aliases = parse_aliases(&alias_path);
+    let aliases = parse_aliases(&alias_path);*/
+    let aliases = parse_aliases(&gamedata.get("scripts/entity_defs/alias.xml")?);
 
-    let entities_xml_path = gamedata.lookup("scripts/entities.xml");
-    let entities_xml = std::fs::read_to_string(&entities_xml_path).unwrap();
-    let doc = roxmltree::Document::parse(&entities_xml).unwrap();
+    //let entities_xml_path = gamedata.lookup("scripts/entities.xml");
+    //let entities_xml = std::fs::read_to_string(&entities_xml_path).unwrap();
+    let entities_xml = gamedata.get("scripts/entities.xml")?;
+    let doc = roxmltree::Document::parse(std::str::from_utf8(&entities_xml).unwrap()).unwrap();
     let root = doc.root();
     let mut entities = vec![];
     for child in child_by_name(
@@ -274,18 +279,19 @@ pub fn parse_scripts(gamedata: &crate::version::Datafiles) -> Vec<EntitySpec> {
             continue;
         }
 
-        let def_path = gamedata.lookup(&format!(
+        let def = gamedata.get(&format!(
             "scripts/entity_defs/{}.def",
             child.tag_name().name()
-        ));
-        let mut def = parse_def(def_path, &aliases);
+        ))?;
+        let mut def = parse_def(&def, &aliases);
         let inherits = def
             .implements
             .iter()
             .map(|parent| {
-                let parent_path =
-                    gamedata.lookup(&format!("scripts/entity_defs/interfaces/{}.def", parent));
-                parse_def(parent_path, &aliases)
+                let parent = gamedata
+                    .get(&format!("scripts/entity_defs/interfaces/{}.def", parent))
+                    .unwrap();
+                parse_def(&parent, &aliases)
             })
             .flat_map(|mut parent| {
                 // Sometimes, our parents have parents of our own. For now we only support
@@ -295,10 +301,11 @@ pub fn parse_scripts(gamedata: &crate::version::Datafiles) -> Vec<EntitySpec> {
                     .iter()
                     .map(|parent| {
                         let parent = parent.trim();
-                        let parent_path = gamedata
-                            .lookup(&format!("scripts/entity_defs/interfaces/{}.def", parent));
+                        let parent = gamedata
+                            .get(&format!("scripts/entity_defs/interfaces/{}.def", parent))
+                            .unwrap();
                         //println!("Parsing parent {}...", parent);
-                        parse_def(parent_path, &aliases)
+                        parse_def(&parent, &aliases)
                     })
                     .collect();
                 parent.implements = vec![];
@@ -427,5 +434,5 @@ pub fn parse_scripts(gamedata: &crate::version::Datafiles) -> Vec<EntitySpec> {
             }
         }
     }*/
-    entities
+    Ok(entities)
 }

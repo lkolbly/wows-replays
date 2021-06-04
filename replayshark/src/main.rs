@@ -1,6 +1,7 @@
 use clap::{App, Arg, SubCommand};
+use std::collections::HashMap;
 
-use wows_replays::{parse_scripts, ReplayFile, ReplayMeta};
+use wows_replays::{parse_scripts, ErrorKind, ReplayFile, ReplayMeta};
 
 struct Survey {
     filename: String,
@@ -40,16 +41,17 @@ fn parse_replay<P: wows_replays::analyzer::AnalyzerBuilder>(
     let datafiles = wows_replays::version::Datafiles::new(
         std::path::PathBuf::from("versions"),
         wows_replays::version::Version::from_client_exe(&replay_file.meta.clientVersionFromExe),
-    );
-    let specs = parse_scripts(&datafiles);
+    )?;
+    let specs = parse_scripts(&datafiles)?;
 
     let version_parts: Vec<_> = replay_file.meta.clientVersionFromExe.split(",").collect();
     assert!(version_parts.len() == 4);
 
-    if replay_file.meta.clientVersionFromExe != "0,10,3,3747819" {
-        // TODO: Return invalid version error
-        return Ok(());
-    }
+    /*if replay_file.meta.clientVersionFromExe != "0,10,3,3747819" {
+        return Err(ErrorKind::UnsupportedReplayVersion(
+            version_parts[3].parse::<u32>().unwrap(),
+        ));
+    }*/
 
     let processor = processor.build(&replay_file.meta);
 
@@ -157,6 +159,13 @@ fn main() {
                         .help("Parse all entity packets as unknown"),
                 )
                 .arg(
+                    Arg::with_name("output")
+                        .long("output")
+                        .short("o")
+                        .help("Output filename to dump to")
+                        .takes_value(true),
+                )
+                .arg(
                     Arg::with_name("filter-super")
                         .long("filter-super")
                         .help("Filter packets to be the given entity supertype")
@@ -223,8 +232,10 @@ fn main() {
             output: "foo.png".to_string(),
             damages: vec![],
         };*/
-        let dump = wows_replays::analyzer::packet_dump::PacketDumpBuilder::new(2431.0);
+        //let dump = wows_replays::analyzer::packet_dump::PacketDumpBuilder::new(2431.0);
         //let mut dump = wows_replays::analyzer::damage_trails::DamageTrailsBuilder::new();
+        let mut dump =
+            wows_replays::analyzer::decoder::DecoderBuilder::new(false, matches.value_of("output"));
         parse_replay(&std::path::PathBuf::from(input), dump).unwrap();
     }
     if let Some(matches) = matches.subcommand_matches("summary") {
@@ -248,7 +259,7 @@ fn main() {
         let mut other_failures = 0;
         let mut successes = 0;
         let mut total = 0;
-        //let mut invalid_versions = HashMap::new();
+        let mut invalid_versions = HashMap::new();
         for replay in matches.values_of("REPLAYS").unwrap() {
             for entry in walkdir::WalkDir::new(replay) {
                 let entry = entry.expect("Error unwrapping entry");
@@ -282,13 +293,28 @@ fn main() {
                     // Some serde issue
                     continue;
                 }*/
-                //println!("Parsing {}: ", truncate_string(filename, 20));
+                println!("Parsing {}: ", truncate_string(filename, 20));
                 total += 1;
-                let mut dump = Survey {
+                /*let mut dump = Survey {
                     meta: None,
                     filename: filename.to_string(),
-                };
-                //parse_replay(&std::path::PathBuf::from(replay), dump);
+                };*/
+                let mut survey = wows_replays::analyzer::survey::SurveyBuilder::new();
+                match parse_replay(&std::path::PathBuf::from(replay), survey) {
+                    Ok(_) => successes += 1,
+                    Err(ErrorKind::UnsupportedReplayVersion(n)) => {
+                        version_failures += 1;
+                        if !invalid_versions.contains_key(&n) {
+                            invalid_versions.insert(n, 0);
+                        }
+                        *invalid_versions.get_mut(&n).unwrap() += 1;
+                        println!("Unsupported version {}", n,);
+                    }
+                    Err(e) => {
+                        other_failures += 1;
+                        println!("Parse error: {:?}", e);
+                    }
+                }
                 /*match parse_replay(&replay, |_, _, packets| {
                     // TODO: Update to packet2
                     /*let invalid_packets: Vec<_> = packets
@@ -344,10 +370,10 @@ fn main() {
             version_failures,
             100. * version_failures as f64 / total as f64
         );
-        /*if invalid_versions.len() > 0 {
+        if invalid_versions.len() > 0 {
             for (k, v) in invalid_versions.iter() {
                 println!("  - Version {} appeared {} times", k, v);
             }
-        }*/
+        }
     }
 }

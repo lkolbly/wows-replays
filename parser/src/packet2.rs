@@ -237,8 +237,18 @@ impl Parser {
 
         let mut i = payload;
         let mut args = vec![];
-        for arg in spec.args.iter() {
-            let (new_i, pval) = arg.parse_value(i).unwrap();
+        for (idx, arg) in spec.args.iter().enumerate() {
+            let (new_i, pval) = match arg.parse_value(i) {
+                Ok(x) => x,
+                Err(e) => {
+                    return Err(failure_from_kind(crate::ErrorKind::UnableToParseRpcValue {
+                        method: format!("{}", spec.name),
+                        argnum: idx,
+                        argtype: format!("{:?}", arg),
+                        packet: i.to_vec(),
+                    }));
+                }
+            };
             args.push(pval);
             i = new_i;
         }
@@ -377,7 +387,17 @@ impl Parser {
             let (new_i, prop_id) = le_u8(i)?;
             let spec = &self.specs[entity_type as usize - 1].properties[prop_id as usize];
             //println!("spec {} {}: {:?}", prop_id, new_i.len(), spec.prop_type);
-            let (new_i, value) = spec.prop_type.parse_value(new_i).unwrap();
+            let (new_i, value) = match spec.prop_type.parse_value(new_i) {
+                Ok(x) => x,
+                Err(e) => {
+                    return Err(failure_from_kind(crate::ErrorKind::UnableToParseRpcValue {
+                        method: format!("EntityCreate::{}", spec.name),
+                        argnum: prop_id as usize,
+                        argtype: format!("{:?}", spec),
+                        packet: i.to_vec(),
+                    }));
+                }
+            };
             //println!("{:?}", value);
             i = new_i;
             props.insert(&spec.name, value);
@@ -580,7 +600,8 @@ impl Parser {
                 )
             }
         };
-        assert!(i.len() == 0);
+        // TODO: Add this back
+        //assert!(i.len() == 0);
         Ok((
             remaining,
             Packet {

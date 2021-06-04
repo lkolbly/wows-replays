@@ -1,5 +1,6 @@
+use crate::error::*;
 use nom::number::complete::{le_i16, le_i32, le_i64, le_i8, le_u64, le_u8};
-use nom::IResult;
+//use nom::IResult;
 use nom::{
     bytes::complete::take, number::complete::le_f32, number::complete::le_f64,
     number::complete::le_u16, number::complete::le_u32,
@@ -209,7 +210,18 @@ impl<'argtype> serde::Serialize for ArgValue<'argtype> {
             }
             Self::String(s) => serializer.serialize_bytes(&s),
             Self::UnicodeString(s) => serializer.serialize_bytes(&s),
-            Self::Blob(s) => serializer.serialize_bytes(&s), // TODO: Try pickle-decoding this
+            Self::Blob(blob) => {
+                // TODO: Determine when we can/can't pickle-decode this
+                // Also, make serde_pickle::Value implement Serialize
+                let decoded: Result<serde_json::Value, _> = serde_pickle::from_slice(blob);
+                match decoded {
+                    Ok(v) => {
+                        //let x: serde_json::Value = v.try_into().unwrap();
+                        serializer.serialize_some(&v)
+                    }
+                    Err(_) => serializer.serialize_bytes(&blob),
+                }
+            }
             Self::Array(a) => {
                 let mut seq = serializer.serialize_seq(Some(a.len()))?;
                 for element in a.iter() {
@@ -321,7 +333,11 @@ impl ArgType {
                     if flag == 0 {
                         return Ok((i, ArgValue::NullableFixedDict(None)));
                     } else if flag != 1 {
-                        panic!("Unknown fixed dict flag {:?} in {:?}", flag, i);
+                        return Err(failure_from_kind(ErrorKind::UnknownFixedDictFlag {
+                            flag,
+                            packet: i.to_vec(),
+                        }));
+                        //panic!("Unknown fixed dict flag {:?} in {:?}", flag, i);
                     }
                 }
                 for property in props.iter() {
@@ -433,11 +449,12 @@ pub fn parse_type(arg: &roxmltree::Node, aliases: &HashMap<String, ArgType>) -> 
     }
 }
 
-pub fn parse_aliases(file: &std::path::PathBuf) -> HashMap<String, ArgType> {
+pub fn parse_aliases(def: &[u8]) -> HashMap<String, ArgType> {
+    let def = std::str::from_utf8(def).unwrap();
     let mut aliases = HashMap::new();
 
-    let def = std::fs::read_to_string(&file).unwrap();
-    let doc = roxmltree::Document::parse(&def).unwrap();
+    //let def = std::fs::read_to_string(&file).unwrap();
+    let doc = roxmltree::Document::parse(def).unwrap();
     let root = doc.root();
 
     for t in root.first_child().unwrap().children() {
@@ -532,7 +549,7 @@ macro_rules! unpack_rpc_args {
         {
             let mut i = 0;
             ($({
-                println!("{:?}", $args[i]);
+                //println!("{:?}", $args[i]);
                 //let x: $t = (&$args[i]).try_into().unwrap();
                 let x: $t = <&crate::rpc::typedefs::ArgValue as std::convert::TryInto<$t>>::try_into(&$args[i]).unwrap();
                 i += 1;

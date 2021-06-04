@@ -4,17 +4,28 @@ use crate::unpack_rpc_args;
 use serde_derive::Serialize;
 use std::collections::HashMap;
 
-pub struct DecoderBuilder {}
+pub struct DecoderBuilder {
+    silent: bool,
+    path: Option<String>,
+}
 
 impl DecoderBuilder {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(silent: bool, output: Option<&str>) -> Self {
+        Self {
+            silent,
+            path: output.map(|s| s.to_string()),
+        }
     }
 }
 
 impl AnalyzerBuilder for DecoderBuilder {
     fn build(&self, _: &crate::ReplayMeta) -> Box<dyn Analyzer> {
-        Box::new(Decoder {})
+        Box::new(Decoder {
+            silent: self.silent,
+            output: self.path.as_ref().map(|path| {
+                Box::new(std::fs::File::create(path).unwrap()) as Box<dyn std::io::Write>
+            }),
+        })
     }
 }
 
@@ -81,6 +92,18 @@ pub enum DeathCause {
     Ramming,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct OnArenaStateReceivedPlayer {
+    username: String,
+    avatarid: i64,
+    shipid: i64,
+    playerid: i64,
+    //playeravatarid: i64,
+
+    // TODO: Replace String with the actual pickle value (which is cleanly serializable)
+    raw: HashMap<i64, String>,
+}
+
 #[derive(Debug, Serialize)]
 enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
     Chat {
@@ -104,7 +127,17 @@ enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
         cause: DeathCause,
     },
     EntityMethod(&'rawpacket EntityMethodPacket<'argtype>),
-    Other(&'rawpacket PacketType<'replay, 'argtype>),
+    EntityProperty(&'rawpacket crate::packet2::EntityPropertyPacket<'argtype>),
+    BasePlayerCreate(&'rawpacket crate::packet2::BasePlayerCreatePacket<'replay>),
+    CellPlayerCreate(&'rawpacket crate::packet2::CellPlayerCreatePacket<'replay>),
+    EntityEnter(&'rawpacket crate::packet2::EntityEnterPacket),
+    EntityLeave(&'rawpacket crate::packet2::EntityLeavePacket),
+    EntityCreate(&'rawpacket crate::packet2::EntityCreatePacket<'argtype>),
+    OnArenaStateReceived {
+        players: Vec<OnArenaStateReceivedPlayer>,
+    },
+    Unknown(&'replay [u8]),
+    Invalid(&'rawpacket crate::packet2::InvalidPacket<'replay>),
     /*Position(PositionPacket),
     Entity(EntityPacket<'a>), // 0x7 and 0x8 are known to be of this type
     Chat(ChatPacket<'a>),
@@ -133,7 +166,10 @@ struct DecodedPacket<'replay, 'argtype, 'rawpacket> {
     //pub raw: &'a [u8],
 }
 
-struct Decoder {}
+struct Decoder {
+    silent: bool,
+    output: Option<Box<dyn std::io::Write>>,
+}
 
 impl Analyzer for Decoder {
     fn finish(&self) {}
@@ -143,7 +179,8 @@ impl Analyzer for Decoder {
         let minutes = (time / 60.0).floor() as i32;
         let seconds = (time - minutes as f32 * 60.0).floor() as i32;*/
         //println!("{:02}:{:02}: {:?}", minutes, seconds, packet.payload);
-        println!("{}", serde_json::to_string(packet).unwrap());
+        //println!("{}", serde_json::to_string(packet).unwrap());
+        //println!("{:?}", packet);
 
         let decoded = match &packet.payload {
             PacketType::EntityMethod(EntityMethodPacket {
@@ -211,12 +248,19 @@ impl Analyzer for Decoder {
                         message,
                     }
                 } else if *method == "onArenaStateReceived" {
+                    let value = serde_pickle::de::value_from_slice(match &args[2] {
+                        crate::rpc::typedefs::ArgValue::Blob(x) => x,
+                        _ => panic!("foo"),
+                    })
+                    .unwrap();
+                    //println!("{:#?}", value);
                     let value = serde_pickle::de::value_from_slice(match &args[3] {
                         crate::rpc::typedefs::ArgValue::Blob(x) => x,
                         _ => panic!("foo"),
                     })
                     .unwrap();
 
+                    let mut players_out = vec![];
                     if let serde_pickle::value::Value::List(players) = &value {
                         for player in players.iter() {
                             let mut values = HashMap::new();
@@ -231,6 +275,7 @@ impl Analyzer for Decoder {
                                     }
                                 }
                             }
+                            //println!("onArenaStateReceived: {:#?}", values);
                             let avatar = values.get(&0x1).unwrap();
                             let username = values.get(&0x16).unwrap();
                             let username = std::str::from_utf8(match username {
@@ -241,10 +286,30 @@ impl Analyzer for Decoder {
                             let shipid = values.get(&0x1d).unwrap();
                             let playerid = values.get(&0x1e).unwrap();
                             let playeravatarid = values.get(&0x1f).unwrap();
-                            println!(
+                            /*println!(
                                 "{}: {}/{}/{}/{}",
                                 username, avatar, shipid, playerid, playeravatarid
-                            );
+                            );*/
+                            let mut raw = HashMap::new();
+                            for (k, v) in values.iter() {
+                                raw.insert(*k, format!("{:?}", v));
+                            }
+                            players_out.push(OnArenaStateReceivedPlayer {
+                                username: username.to_string(),
+                                avatarid: match avatar {
+                                    serde_pickle::value::Value::I64(i) => *i,
+                                    _ => panic!("foo"),
+                                },
+                                shipid: match shipid {
+                                    serde_pickle::value::Value::I64(i) => *i,
+                                    _ => panic!("foo"),
+                                },
+                                playerid: match playerid {
+                                    serde_pickle::value::Value::I64(i) => *i,
+                                    _ => panic!("foo"),
+                                },
+                                raw: raw,
+                            });
                             /*self.usernames.insert(
                                 match avatar {
                                     serde_pickle::value::Value::I64(i) => *i as i32,
@@ -253,9 +318,11 @@ impl Analyzer for Decoder {
                                 username.to_string(),
                             );*/
                         }
-                        println!("found {} players", players.len());
+                        //println!("found {} players", players.len());
                     }
-                    DecodedPacketPayload::Other(&packet.payload)
+                    DecodedPacketPayload::OnArenaStateReceived {
+                        players: players_out,
+                    }
                 } else if *method == "receiveDamageStat" {
                     let value = serde_pickle::de::value_from_slice(match &args[0] {
                         crate::rpc::typedefs::ArgValue::Blob(x) => x,
@@ -338,14 +405,6 @@ impl Analyzer for Decoder {
                         killer,
                         cause,
                     }
-                } else if *method == "receiveDamageReport" {
-                    DecodedPacketPayload::Other(&packet.payload)
-                } else if *method == "receiveDamagesOnShip" {
-                    DecodedPacketPayload::Other(&packet.payload)
-                } else if *method == "receiveArtilleryShots" {
-                    DecodedPacketPayload::Other(&packet.payload)
-                } else if *method == "receiveHitLocationsInitialState" {
-                    DecodedPacketPayload::Other(&packet.payload)
                 } else if *method == "onRibbon" {
                     let (ribbon,) = unpack_rpc_args!(args, i8);
                     let ribbon = match ribbon {
@@ -384,17 +443,35 @@ impl Analyzer for Decoder {
                     })
                 }
             }
+            PacketType::EntityProperty(p) => DecodedPacketPayload::EntityProperty(p),
             PacketType::Position(pos) => DecodedPacketPayload::Position((*pos).clone()),
             PacketType::PlayerOrientation(pos) => {
                 DecodedPacketPayload::PlayerOrientation((*pos).clone())
             }
-            _ => DecodedPacketPayload::Other(&packet.payload),
+            PacketType::BasePlayerCreate(b) => DecodedPacketPayload::BasePlayerCreate(b),
+            PacketType::CellPlayerCreate(c) => DecodedPacketPayload::CellPlayerCreate(c),
+            PacketType::EntityEnter(e) => DecodedPacketPayload::EntityEnter(e),
+            PacketType::EntityLeave(e) => DecodedPacketPayload::EntityLeave(e),
+            PacketType::EntityCreate(e) => DecodedPacketPayload::EntityCreate(e),
+            PacketType::Unknown(u) => DecodedPacketPayload::Unknown(&u),
+            PacketType::Invalid(u) => DecodedPacketPayload::Invalid(&u),
         };
         let decoded = DecodedPacket {
             clock: packet.clock,
             payload: decoded,
         };
         //println!("{:#?}", decoded);
-        println!("{}", serde_json::to_string_pretty(&decoded).unwrap());
+        //println!("{}", serde_json::to_string_pretty(&decoded).unwrap());
+        if !self.silent {
+            let encoded = serde_json::to_string(&decoded).unwrap();
+            match self.output.as_mut() {
+                Some(f) => {
+                    writeln!(f, "{}", encoded);
+                }
+                None => {
+                    println!("{}", encoded);
+                }
+            }
+        }
     }
 }
