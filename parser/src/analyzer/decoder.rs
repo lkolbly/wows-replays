@@ -1,6 +1,7 @@
 use crate::analyzer::{Analyzer, AnalyzerBuilder};
 use crate::packet2::{EntityMethodPacket, Packet, PacketType};
 use crate::unpack_rpc_args;
+use modular_bitfield::prelude::*;
 use serde_derive::Serialize;
 use std::collections::HashMap;
 
@@ -104,6 +105,25 @@ pub struct OnArenaStateReceivedPlayer {
     raw: HashMap<i64, String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct DamageReceived {
+    target: i32,
+    damage: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MinimapUpdate {
+    entity_id: i32,
+    disappearing: bool,
+    heading: f32,
+
+    /// Zero is left edge, 1.0 is right edge
+    x: f32,
+
+    /// Zero is bottom edge, 1.0 is top edge
+    y: f32,
+}
+
 #[derive(Debug, Serialize)]
 enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
     Chat {
@@ -134,27 +154,20 @@ enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
     EntityLeave(&'rawpacket crate::packet2::EntityLeavePacket),
     EntityCreate(&'rawpacket crate::packet2::EntityCreatePacket<'argtype>),
     OnArenaStateReceived {
+        arg0: i64,
+        arg1: i8,
+        arg2: HashMap<i64, Vec<Option<HashMap<String, String>>>>,
         players: Vec<OnArenaStateReceivedPlayer>,
     },
+    CheckPing(u64),
+    DamageReceived(Vec<DamageReceived>),
+    MinimapUpdate(Vec<MinimapUpdate>),
     Unknown(&'replay [u8]),
     Invalid(&'rawpacket crate::packet2::InvalidPacket<'replay>),
-    /*Position(PositionPacket),
-    Entity(EntityPacket<'a>), // 0x7 and 0x8 are known to be of this type
-    Chat(ChatPacket<'a>),
-    Timing(TimingPacket),
+    /*
     ArtilleryHit(ArtilleryHitPacket<'a>),
-    Banner(Banner),
-    DamageReceived(DamageReceivedPacket),
     Type24(Type24Packet),
-    PlayerOrientation(PlayerOrientationPacket),
-    Type8_79(Vec<(u32, u32)>),
-    Setup(SetupPacket),
-    ShipDestroyed(ShipDestroyedPacket),
-    VoiceLine(VoiceLinePacket),
-    Unknown(&'a [u8]),
-
-    /// These are packets which we thought we understood, but couldn't parse
-    Invalid(InvalidPacket<'a>),*/
+    */
 }
 
 #[derive(Debug, Serialize)]
@@ -169,6 +182,22 @@ struct DecodedPacket<'replay, 'argtype, 'rawpacket> {
 struct Decoder {
     silent: bool,
     output: Option<Box<dyn std::io::Write>>,
+}
+
+fn format_time_with_offset(offset: f32, clock: f32) -> String {
+    let time = clock + offset;
+    let minutes = (time / 60.0).floor() as i32;
+    let seconds = (time - minutes as f32 * 60.0).floor() as i32;
+    format!("{:02}:{:02}", minutes, seconds)
+}
+
+#[bitfield]
+struct RawMinimapUpdate {
+    x: B11,
+    y: B11,
+    heading: B8,
+    unknown: bool,
+    is_disappearing: bool,
 }
 
 impl Analyzer for Decoder {
@@ -248,12 +277,52 @@ impl Analyzer for Decoder {
                         message,
                     }
                 } else if *method == "onArenaStateReceived" {
+                    let (arg0, arg1) = unpack_rpc_args!(args, i64, i8);
+
                     let value = serde_pickle::de::value_from_slice(match &args[2] {
                         crate::rpc::typedefs::ArgValue::Blob(x) => x,
                         _ => panic!("foo"),
                     })
                     .unwrap();
-                    //println!("{:#?}", value);
+
+                    let value = match value {
+                        serde_pickle::value::Value::Dict(d) => d,
+                        _ => panic!(),
+                    };
+                    let mut arg2 = HashMap::new();
+                    for (k, v) in value.iter() {
+                        let k = match k {
+                            serde_pickle::value::HashableValue::I64(i) => *i,
+                            _ => panic!(),
+                        };
+                        let v = match v {
+                            serde_pickle::value::Value::List(l) => l,
+                            _ => panic!(),
+                        };
+                        let v: Vec<_> = v
+                            .iter()
+                            .map(|elem| match elem {
+                                serde_pickle::value::Value::Dict(d) => Some(
+                                    d.iter()
+                                        .map(|(k, v)| {
+                                            let k = match k {
+                                                serde_pickle::value::HashableValue::Bytes(b) => {
+                                                    std::str::from_utf8(b).unwrap().to_string()
+                                                }
+                                                _ => panic!(),
+                                            };
+                                            let v = format!("{:?}", v);
+                                            (k, v)
+                                        })
+                                        .collect(),
+                                ),
+                                serde_pickle::value::Value::None => None,
+                                _ => panic!(),
+                            })
+                            .collect();
+                        arg2.insert(k, v);
+                    }
+
                     let value = serde_pickle::de::value_from_slice(match &args[3] {
                         crate::rpc::typedefs::ArgValue::Blob(x) => x,
                         _ => panic!("foo"),
@@ -276,6 +345,15 @@ impl Analyzer for Decoder {
                                 }
                             }
                             //println!("onArenaStateReceived: {:#?}", values);
+                            /*
+                            1: Player ID
+                            5: Clan name
+                            16: Username
+                            1c: Equipped equipment (?)
+                            1d: Ship/hull ID? (1 more than player ID)
+                            1e: Player ship ID
+                            1f: Player ship ID (why does this appear twice?)
+                            */
                             let avatar = values.get(&0x1).unwrap();
                             let username = values.get(&0x16).unwrap();
                             let username = std::str::from_utf8(match username {
@@ -321,6 +399,9 @@ impl Analyzer for Decoder {
                         //println!("found {} players", players.len());
                     }
                     DecodedPacketPayload::OnArenaStateReceived {
+                        arg0,
+                        arg1,
+                        arg2,
                         players: players_out,
                     }
                 } else if *method == "receiveDamageStat" {
@@ -435,6 +516,74 @@ impl Analyzer for Decoder {
                         }
                     };
                     DecodedPacketPayload::Ribbon(ribbon)
+                } else if *method == "receiveDamagesOnShip" {
+                    let mut v = vec![];
+                    for elem in match &args[0] {
+                        crate::rpc::typedefs::ArgValue::Array(a) => a,
+                        _ => panic!(),
+                    } {
+                        let map = match elem {
+                            crate::rpc::typedefs::ArgValue::FixedDict(m) => m,
+                            _ => panic!(),
+                        };
+                        v.push(DamageReceived {
+                            target: match map.get("vehicleID").unwrap() {
+                                crate::rpc::typedefs::ArgValue::Int32(i) => *i,
+                                _ => panic!(),
+                            },
+                            damage: match map.get("damage").unwrap() {
+                                crate::rpc::typedefs::ArgValue::Float32(f) => *f,
+                                _ => panic!(),
+                            },
+                        });
+                    }
+                    DecodedPacketPayload::DamageReceived(v)
+                } else if *method == "onCheckGamePing" {
+                    let (ping,) = unpack_rpc_args!(args, u64);
+                    DecodedPacketPayload::CheckPing(ping)
+                } else if *method == "updateMinimapVisionInfo" {
+                    let v = match &args[0] {
+                        crate::rpc::typedefs::ArgValue::Array(a) => a,
+                        _ => panic!(),
+                    };
+                    let mut updates = vec![];
+                    for minimap_update in v.iter() {
+                        let minimap_update = match minimap_update {
+                            crate::rpc::typedefs::ArgValue::FixedDict(m) => m,
+                            _ => panic!(),
+                        };
+                        let vehicle_id = minimap_update.get("vehicleID").unwrap();
+
+                        let packed_data = match minimap_update.get("packedData").unwrap() {
+                            crate::rpc::typedefs::ArgValue::Uint32(u) => *u,
+                            _ => panic!(),
+                        };
+                        let update = RawMinimapUpdate::from_bytes(packed_data.to_le_bytes());
+                        let heading = update.heading() as f32 / 256. * 360. - 180.;
+
+                        let x = update.x() as f32 / 512. - 1.5;
+                        let y = update.y() as f32 / 512. - 1.5;
+
+                        assert!(update.unknown() == false);
+                        updates.push(MinimapUpdate {
+                            entity_id: match vehicle_id {
+                                crate::rpc::typedefs::ArgValue::Uint32(u) => *u as i32,
+                                _ => panic!(),
+                            },
+                            x,
+                            y,
+                            heading,
+                            disappearing: update.is_disappearing(),
+                        })
+                    }
+
+                    let args1 = match &args[1] {
+                        crate::rpc::typedefs::ArgValue::Array(a) => a,
+                        _ => panic!(),
+                    };
+                    assert!(args1.len() == 0);
+
+                    DecodedPacketPayload::MinimapUpdate(updates)
                 } else {
                     //DecodedPacketPayload::Other(&packet.payload)
                     DecodedPacketPayload::EntityMethod(match &packet.payload {
