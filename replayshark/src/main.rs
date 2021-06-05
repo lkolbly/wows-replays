@@ -3,6 +3,11 @@ use std::collections::HashMap;
 
 use wows_replays::{parse_scripts, ErrorKind, ReplayFile, ReplayMeta};
 
+mod built_info {
+    // The file has been placed there by the build script.
+    include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
+
 struct Survey {
     filename: String,
     meta: Option<ReplayMeta>,
@@ -115,7 +120,7 @@ fn main() {
         .required(true)
         .index(1);
     let matches = App::new("World of Warships Replay Parser Utility")
-        .version("0.1.0")
+        .version(built_info::GIT_VERSION.unwrap_or("undefined"))
         .author("Lane Kolbly <lane@rscheme.org>")
         .about("Parses & processes World of Warships replay files")
         .subcommand(
