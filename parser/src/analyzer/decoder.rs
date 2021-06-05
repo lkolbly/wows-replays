@@ -173,7 +173,7 @@ enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
 #[derive(Debug, Serialize)]
 struct DecodedPacket<'replay, 'argtype, 'rawpacket> {
     //pub packet_size: u32,
-    //pub packet_type: u32,
+    pub packet_type: u32,
     pub clock: f32,
     pub payload: DecodedPacketPayload<'replay, 'argtype, 'rawpacket>,
     //pub raw: &'a [u8],
@@ -607,6 +607,7 @@ impl Analyzer for Decoder {
         };
         let decoded = DecodedPacket {
             clock: packet.clock,
+            packet_type: packet.packet_type,
             payload: decoded,
         };
         //println!("{:#?}", decoded);
