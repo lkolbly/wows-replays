@@ -65,7 +65,7 @@ impl Analyzer for TrailRenderer {
             let minimap = image::load(
                 std::io::BufReader::new(
                     std::fs::File::open(&format!(
-                        "res_unpack/{}/minimap.png",
+                        "versions/0.10.3/{}/minimap.png",
                         self.meta.as_ref().unwrap().mapName
                     ))
                     .unwrap(),
@@ -76,7 +76,7 @@ impl Analyzer for TrailRenderer {
             let minimap_background = image::load(
                 std::io::BufReader::new(
                     std::fs::File::open(&format!(
-                        "res_unpack/{}/minimap_water.png",
+                        "versions/0.10.3/{}/minimap_water.png",
                         self.meta.as_ref().unwrap().mapName
                     ))
                     .unwrap(),
