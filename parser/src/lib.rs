@@ -6,6 +6,7 @@ mod parse_77;
 pub mod rpc;
 //mod script_type;
 //mod scripts;
+mod nested_property_path;
 pub mod version;
 mod wowsreplay;
 

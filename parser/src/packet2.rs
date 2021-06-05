@@ -63,7 +63,7 @@ pub struct EntityMethodPacket<'argtype> {
 #[derive(Debug, Serialize)]
 pub struct EntityCreatePacket<'argtype> {
     pub entity_id: u32,
-    pub entity_type: u16,
+    pub entity_type: &'argtype str,
     pub vehicle_id: u32,
     pub space_id: u32,
     pub position_x: f32,
@@ -180,16 +180,19 @@ pub struct Packet<'replay, 'argtype> {
     pub raw: &'replay [u8],
 }
 
-pub struct Parser {
-    version: u32,
-    specs: Vec<EntitySpec>,
-
-    /// Maps the entity IDs to the entity type
-    entities: HashMap<u32, u16>,
+struct Entity<'argtype> {
+    entity_type: u16,
+    properties: Vec<ArgValue<'argtype>>,
 }
 
-impl Parser {
-    pub fn new(entities: Vec<EntitySpec>) -> Parser {
+pub struct Parser<'argtype> {
+    version: u32,
+    specs: &'argtype Vec<EntitySpec>,
+    entities: HashMap<u32, Entity<'argtype>>,
+}
+
+impl<'argtype> Parser<'argtype> {
+    pub fn new(entities: &'argtype Vec<EntitySpec>) -> Parser {
         Parser {
             version: 0,
             specs: entities,
@@ -200,14 +203,14 @@ impl Parser {
     fn parse_entity_property_packet<'a, 'b>(
         &'b self,
         i: &'a [u8],
-    ) -> IResult<&'a [u8], PacketType<'a, 'b>> {
+    ) -> IResult<&'a [u8], PacketType<'a, 'argtype>> {
         let (i, entity_id) = le_u32(i)?;
         let (i, prop_id) = le_u32(i)?;
         let (i, payload_length) = le_u32(i)?;
         let (i, payload) = take(payload_length)(i)?;
 
-        let entity_type = self.entities.get(&entity_id).unwrap();
-        let spec = &self.specs[*entity_type as usize - 1].properties[prop_id as usize];
+        let entity_type = self.entities.get(&entity_id).unwrap().entity_type;
+        let spec = &self.specs[entity_type as usize - 1].properties[prop_id as usize];
 
         let (_, pval) = spec.prop_type.parse_value(payload).unwrap();
 
@@ -231,9 +234,9 @@ impl Parser {
         let (i, payload) = take(payload_length)(i)?;
         assert!(i.len() == 0);
 
-        let entity_type = self.entities.get(&entity_id).unwrap();
+        let entity_type = self.entities.get(&entity_id).unwrap().entity_type;
 
-        let spec = &self.specs[*entity_type as usize - 1].client_methods[method_id as usize];
+        let spec = &self.specs[entity_type as usize - 1].client_methods[method_id as usize];
 
         let mut i = payload;
         let mut args = vec![];
@@ -259,6 +262,71 @@ impl Parser {
                 entity_id,
                 method: &spec.name,
                 args,
+            }),
+        ))
+    }
+
+    fn parse_nested_property_update<'replay, 'b>(
+        &'b mut self,
+        i: &'replay [u8],
+    ) -> IResult<&'replay [u8], PacketType<'replay, 'argtype>> {
+        let (i, entity_id) = le_u32(i)?;
+        let (i, is_slice) = le_u8(i)?;
+        let (i, payload_size) = le_u8(i)?;
+        let (i, unknown) = take(3usize)(i)?;
+        let payload = i;
+        assert!(payload_size as usize == payload.len());
+
+        let entity = self.entities.get_mut(&entity_id).unwrap();
+        let entity_type = entity.entity_type;
+
+        let spec = &self.specs[entity_type as usize - 1];
+
+        println!("nprops = {}", spec.properties.len());
+        println!("{} {:?}", is_slice, payload);
+        assert!(is_slice & 0xFE == 0);
+
+        let mut reader = bitreader::BitReader::new(payload);
+        let cont = reader.read_u8(1).unwrap();
+        assert!(cont == 1);
+        let prop_idx = reader
+            .read_u8(spec.properties.len().next_power_of_two().trailing_zeros() as u8)
+            .unwrap();
+        println!("prop_idx={}", prop_idx);
+        println!("{}", spec.properties[prop_idx as usize].name);
+
+        crate::nested_property_path::get_nested_prop_path_helper(
+            is_slice & 0x1 == 1,
+            &spec.properties[prop_idx as usize].prop_type,
+            &mut entity.properties[prop_idx as usize],
+            reader,
+        );
+
+        /*let cont2 = reader.read_u8(1).unwrap();
+        println!("{} {} {}", cont, prop_idx, cont2);
+        let propspec = match &spec.properties[prop_idx as usize].prop_type {
+            crate::rpc::typedefs::ArgType::FixedDict((_, d)) => d,
+            _ => panic!(),
+        };
+        println!(
+            "{} {}",
+            propspec.len(),
+            propspec.len().next_power_of_two().trailing_zeros()
+        );
+        let prop_idx = reader
+            .read_u8(propspec.len().next_power_of_two().trailing_zeros() as u8)
+            .unwrap();
+        let cont = reader.read_u8(1).unwrap();
+        println!("{} {}", prop_idx, cont);
+        println!("{:#?}", propspec[prop_idx as usize]);*/
+
+        //panic!();
+        Ok((
+            i,
+            PacketType::EntityEnter(EntityEnterPacket {
+                entity_id: 0,
+                space_id: 0,
+                vehicle_id: 0,
             }),
         ))
     }
@@ -344,7 +412,14 @@ impl Parser {
         let (i, entity_id) = le_u32(i)?;
         let (i, entity_type) = le_u16(i)?;
         let (i, state) = take(i.len())(i)?;
-        self.entities.insert(entity_id, entity_type);
+        self.entities.insert(
+            entity_id,
+            Entity {
+                entity_type,
+                // TODO: Parse the state
+                properties: vec![],
+            },
+        );
         Ok((
             i,
             PacketType::BasePlayerCreate(BasePlayerCreatePacket {
@@ -374,7 +449,6 @@ impl Parser {
         if self.entities.contains_key(&entity_id) {
             //println!("DBG: Entity {} got created twice!", entity_id);
         }
-        self.entities.insert(entity_id, entity_type);
 
         let (i, num_props) = le_u8(i)?;
         /*println!(
@@ -383,6 +457,7 @@ impl Parser {
         );*/
         let mut i = i;
         let mut props: HashMap<&str, _> = HashMap::new();
+        let mut stored_props: Vec<_> = vec![];
         for _ in 0..num_props {
             let (new_i, prop_id) = le_u8(i)?;
             let spec = &self.specs[entity_type as usize - 1].properties[prop_id as usize];
@@ -400,15 +475,24 @@ impl Parser {
             };
             //println!("{:?}", value);
             i = new_i;
+            stored_props.push(value.clone());
             props.insert(&spec.name, value);
         }
         //println!("{:?}", props);
+
+        self.entities.insert(
+            entity_id,
+            Entity {
+                entity_type,
+                properties: stored_props,
+            },
+        );
 
         Ok((
             i,
             PacketType::EntityCreate(EntityCreatePacket {
                 entity_id,
-                entity_type,
+                entity_type: &self.specs[entity_type as usize - 1].name,
                 vehicle_id,
                 space_id,
                 position_x: posx,
@@ -463,8 +547,8 @@ impl Parser {
             dirz,
             value.len()
         );*/
-        let entity_type = self.entities.get(&entity_id).unwrap();
-        let spec = &self.specs[*entity_type as usize - 1];
+        let entity_type = self.entities.get(&entity_id).unwrap().entity_type;
+        let spec = &self.specs[entity_type as usize - 1];
         let mut value = value;
         let mut prop_values = vec![];
         for property in spec.internal_properties.iter() {
@@ -553,11 +637,7 @@ impl Parser {
             0x7 => self.parse_entity_property_packet(i)?,
             0x8 => self.parse_entity_method_packet(i)?,
             0xA => self.parse_position_packet(i)?,
-            /*0x22 => {
-                // Nested property packet?
-                println!("{:#?}", i);
-                panic!();
-            },*/
+            0x22 => self.parse_nested_property_update(i)?,
             /*0x24 => {
                 parse_type_24_packet(i)?
             }*/

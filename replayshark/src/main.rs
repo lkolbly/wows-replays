@@ -61,7 +61,7 @@ fn parse_replay<P: wows_replays::analyzer::AnalyzerBuilder>(
     let processor = processor.build(&replay_file.meta);
 
     // Parse packets
-    let mut p = wows_replays::packet2::Parser::new(specs);
+    let mut p = wows_replays::packet2::Parser::new(&specs);
     let mut analyzer_set = wows_replays::analyzer::AnalyzerAdapter::new(vec![processor]);
     match p.parse_packets::<wows_replays::analyzer::AnalyzerAdapter>(
         &replay_file.packet_data,

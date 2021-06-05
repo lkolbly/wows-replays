@@ -144,8 +144,8 @@ impl PrimitiveType {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FixedDictProperty {
-    name: String,
-    prop_type: ArgType,
+    pub name: String,
+    pub prop_type: ArgType,
 }
 
 #[derive(Clone, Debug, PartialEq)]
