@@ -88,9 +88,10 @@ fn printspecs(specs: &Vec<wows_replays::rpc::entitydefs::EntitySpec>) {
     for entity in specs.iter() {
         println!();
         println!(
-            "{} has {} properties and {}/{}/{} base/cell/client methods",
+            "{} has {} properties ({} internal) and {}/{}/{} base/cell/client methods",
             entity.name,
             entity.properties.len(),
+            entity.internal_properties.len(),
             entity.base_methods.len(),
             entity.cell_methods.len(),
             entity.client_methods.len()
@@ -98,6 +99,13 @@ fn printspecs(specs: &Vec<wows_replays::rpc::entitydefs::EntitySpec>) {
 
         println!("Properties:");
         for (i, property) in entity.properties.iter().enumerate() {
+            println!(
+                " - {}: {} flag={:?} type={:?}",
+                i, property.name, property.flags, property.prop_type
+            );
+        }
+        println!("Internal properties:");
+        for (i, property) in entity.internal_properties.iter().enumerate() {
             println!(" - {}: {} type={:?}", i, property.name, property.prop_type);
         }
         println!("Client methods:");
@@ -111,7 +119,12 @@ fn printspecs(specs: &Vec<wows_replays::rpc::entitydefs::EntitySpec>) {
 }
 
 fn main() {
-    /*let specs = parse_scripts(std::path::PathBuf::from("versions/0.10.3/scripts"));
+    /*let datafiles = wows_replays::version::Datafiles::new(
+        std::path::PathBuf::from("versions"),
+        wows_replays::version::Version::from_client_exe("0,10,2,0"),
+    )
+    .unwrap();
+    let specs = parse_scripts(&datafiles).unwrap();
     printspecs(&specs);
     return;*/
 

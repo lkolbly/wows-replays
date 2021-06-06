@@ -39,7 +39,7 @@ impl Flags {
 pub struct Property {
     pub name: String,
     pub prop_type: ArgType,
-    flags: Flags,
+    pub flags: Flags,
 }
 
 #[derive(Debug)]
