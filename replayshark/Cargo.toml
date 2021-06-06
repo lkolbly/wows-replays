@@ -9,20 +9,8 @@ build = "build.rs"
 
 [dependencies]
 wows-replays = { version = "0.1.0", path = "../parser" }
-nom = "6.0.0-alpha1"
-hexdump = "0.1.0"
-flate2 = "1.0.14"
-serde = "1.0"
-serde_derive = "1.0"
-serde_json = "1.0"
-thiserror = "1.0.19"
-rust-crypto = "0.2.36"
-plotters = "0.2.15"
-image = "0.23.4"
 clap = "2.33.1"
-env_logger = "0.7.1"
 walkdir = "2.3.2"
-serde-pickle = "0.6.2"
 
 [build-dependencies]
 built = { version = "0.5.1", features = [ "git2", "chrono" ] }
