@@ -21,7 +21,6 @@ impl AnalyzerBuilder for SummaryBuilder {
         println!();
 
         Box::new(Summary {
-            meta: Some((*meta).clone()),
             ribbons: HashMap::new(),
             damage: HashMap::new(),
         })
@@ -55,7 +54,6 @@ pub enum Ribbon {
 }
 
 struct Summary {
-    meta: Option<crate::ReplayMeta>,
     ribbons: HashMap<Ribbon, usize>,
     damage: HashMap<(i64, i64), (i64, f64)>,
 }
@@ -66,9 +64,6 @@ impl Analyzer for Summary {
             println!("{:?}: {}", ribbon, count);
         }
         println!();
-        /*for ((a, b), (c, d)) in self.damage.iter() {
-            println!("{} {}: {} {}", a, b, c, d);
-        }*/
         println!(
             "Total damage: {:.0}",
             self.damage.get(&(1, 0)).unwrap_or(&(0, 0.)).1
@@ -81,10 +76,9 @@ impl Analyzer for Summary {
         // Collect banners, damage reports, etc.
         match packet {
             Packet {
-                clock,
                 payload:
                     PacketType::EntityMethod(EntityMethodPacket {
-                        entity_id,
+                        entity_id: _entity_id,
                         method,
                         args,
                     }),

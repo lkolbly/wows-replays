@@ -38,6 +38,7 @@ pub enum ErrorKind {
         argnum: usize,
         argtype: String,
         packet: Vec<u8>,
+        error: String,
     },
     #[error("Unknown FixedDict flag")]
     UnknownFixedDictFlag { flag: u8, packet: Vec<u8> },

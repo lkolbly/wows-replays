@@ -2,7 +2,7 @@ use clap::{App, Arg, SubCommand};
 use std::collections::HashMap;
 use std::io::Write;
 
-use wows_replays::{parse_scripts, ErrorKind, ReplayFile, ReplayMeta};
+use wows_replays::{parse_scripts, ErrorKind, ReplayFile};
 
 mod built_info {
     // The file has been placed there by the build script.
@@ -120,7 +120,7 @@ impl SurveyResults {
             SurveyResult::Blacklisted => {
                 self.blacklisted += 1;
             }
-            SurveyResult::Success((npacks, ninvalid)) => {
+            SurveyResult::Success((_npacks, ninvalid)) => {
                 self.successes += 1;
                 if ninvalid > 0 {
                     self.successes_with_invalids += 1;
@@ -133,7 +133,7 @@ impl SurveyResults {
                 }
                 *self.invalid_versions.get_mut(&version).unwrap() += 1;
             }
-            SurveyResult::ParseFailure(error) => {
+            SurveyResult::ParseFailure(_error) => {
                 self.parse_failures += 1;
             }
         }
@@ -192,10 +192,10 @@ fn survey_file(skip_decode: bool, replay: std::path::PathBuf) -> SurveyResult {
     print!("Parsing {}: ", truncate_string(filename, 20));
     std::io::stdout().flush().unwrap();
 
-    let mut survey_stats = std::rc::Rc::new(std::cell::RefCell::new(
+    let survey_stats = std::rc::Rc::new(std::cell::RefCell::new(
         wows_replays::analyzer::survey::SurveyStats::new(),
     ));
-    let mut survey =
+    let survey =
         wows_replays::analyzer::survey::SurveyBuilder::new(survey_stats.clone(), skip_decode);
     match parse_replay(&std::path::PathBuf::from(replay), survey) {
         Ok(_) => {
@@ -222,15 +222,6 @@ fn survey_file(skip_decode: bool, replay: std::path::PathBuf) -> SurveyResult {
 }
 
 fn main() {
-    /*let datafiles = wows_replays::version::Datafiles::new(
-        std::path::PathBuf::from("versions"),
-        wows_replays::version::Version::from_client_exe("0,10,2,0"),
-    )
-    .unwrap();
-    let specs = parse_scripts(&datafiles).unwrap();
-    printspecs(&specs);
-    return;*/
-
     let replay_arg = Arg::with_name("REPLAY")
         .help("The replay file to use")
         .required(true)
@@ -293,6 +284,16 @@ fn main() {
                 )
                 .arg(replay_arg.clone()),
         )
+        .subcommand(
+            SubCommand::with_name("spec")
+                .about("Dump the scripts specifications to console")
+                .arg(
+                    Arg::with_name("version")
+                        .help("Version to dump. Must be comma-delimited: major,minor,patch,build")
+                        .takes_value(true)
+                        .required(true),
+                ),
+        )
         .get_matches();
 
     if let Some(matches) = matches.subcommand_matches("dump") {
@@ -314,12 +315,21 @@ fn main() {
         };*/
         //let dump = wows_replays::analyzer::packet_dump::PacketDumpBuilder::new(2431.0);
         //let mut dump = wows_replays::analyzer::damage_trails::DamageTrailsBuilder::new();
-        let mut dump = wows_replays::analyzer::decoder::DecoderBuilder::new(
+        let dump = wows_replays::analyzer::decoder::DecoderBuilder::new(
             false,
             matches.is_present("no-meta"),
             matches.value_of("output"),
         );
         parse_replay(&std::path::PathBuf::from(input), dump).unwrap();
+    }
+    if let Some(matches) = matches.subcommand_matches("spec") {
+        let datafiles = wows_replays::version::Datafiles::new(
+            std::path::PathBuf::from("versions"),
+            wows_replays::version::Version::from_client_exe(matches.value_of("version").unwrap()),
+        )
+        .unwrap();
+        let specs = parse_scripts(&datafiles).unwrap();
+        printspecs(&specs);
     }
     if let Some(matches) = matches.subcommand_matches("summary") {
         let input = matches.value_of("REPLAY").unwrap();
@@ -346,7 +356,6 @@ fn main() {
                     continue;
                 }
                 let replay = entry.path().to_path_buf();
-                let filename = replay.file_name().unwrap().to_str().unwrap();
                 let result = survey_file(matches.is_present("skip-decode"), replay);
                 survey_result.add(result);
             }

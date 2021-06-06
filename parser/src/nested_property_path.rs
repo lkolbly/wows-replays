@@ -23,9 +23,6 @@ pub enum UpdateAction<'argtype> {
         index: usize,
         value: ArgValue<'argtype>,
     },
-    RemoveElement {
-        index: usize,
-    },
     RemoveRange {
         start: usize,
         stop: usize,
@@ -226,7 +223,7 @@ pub fn get_nested_prop_path_helper<'argtype>(
             );
             return nesting;
         }
-        (crate::rpc::typedefs::ArgType::Array((size, element_type)), ArgValue::Array(arr)) => {
+        (crate::rpc::typedefs::ArgType::Array((_size, element_type)), ArgValue::Array(arr)) => {
             let idx = reader
                 .read_u8(arr.len().next_power_of_two().trailing_zeros() as u8)
                 .unwrap();

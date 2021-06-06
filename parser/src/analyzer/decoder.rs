@@ -29,7 +29,9 @@ impl AnalyzerBuilder for DecoderBuilder {
                 Box::new(std::fs::File::create(path).unwrap()) as Box<dyn std::io::Write>
             }),
         };
-        decoder.write(&serde_json::to_string(&meta).unwrap());
+        if !self.no_meta {
+            decoder.write(&serde_json::to_string(&meta).unwrap());
+        }
         Box::new(decoder)
     }
 }

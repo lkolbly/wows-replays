@@ -1,12 +1,10 @@
 use crate::error::*;
 use nom::number::complete::{le_i16, le_i32, le_i64, le_i8, le_u64, le_u8};
-//use nom::IResult;
 use nom::{
     bytes::complete::take, number::complete::le_f32, number::complete::le_f64,
     number::complete::le_u16, number::complete::le_u32,
 };
-use serde::ser::{SerializeMap, SerializeSeq, SerializeStruct, SerializeTuple};
-use serde_derive::Serialize;
+use serde::ser::{SerializeMap, SerializeSeq, SerializeTuple};
 use std::collections::HashMap;
 use std::convert::TryInto;
 
@@ -104,7 +102,7 @@ impl PrimitiveType {
                 let (i, size) = le_u8(i)?;
                 if size == 0xff {
                     let (i, size) = le_u16(i)?;
-                    let (i, unknown) = le_u8(i)?;
+                    let (i, _unknown) = le_u8(i)?;
                     let (i, data) = take(size)(i)?;
                     Ok((i, ArgValue::Blob(data.to_vec())))
                 } else {
@@ -116,13 +114,11 @@ impl PrimitiveType {
                 let (i, size) = le_u8(i)?;
                 if size == 0xff {
                     let (i, size) = le_u16(i)?;
-                    let (i, unknown) = le_u8(i)?;
+                    let (i, _unknown) = le_u8(i)?;
                     let (i, data) = take(size)(i)?;
-                    //println!("{:?}", data);
                     Ok((i, ArgValue::String(data.to_vec())))
                 } else {
                     let (i, data) = take(size)(i)?;
-                    //println!("{:?}", data);
                     Ok((i, ArgValue::String(data.to_vec())))
                 }
             }
@@ -130,7 +126,7 @@ impl PrimitiveType {
                 let (i, size) = le_u8(i)?;
                 if size == 0xff {
                     let (i, size) = le_u16(i)?;
-                    let (i, unknown) = le_u8(i)?;
+                    let (i, _unknown) = le_u8(i)?;
                     let (i, data) = take(size)(i)?;
                     Ok((i, ArgValue::UnicodeString(data.to_vec())))
                 } else {
@@ -244,7 +240,7 @@ impl<'argtype> serde::Serialize for ArgValue<'argtype> {
                 obj.end()
             }
             Self::NullableFixedDict(None) => serializer.serialize_none(),
-            Self::Tuple(t) => {
+            Self::Tuple(_t) => {
                 unimplemented!();
             }
         }
@@ -549,10 +545,9 @@ macro_rules! unpack_rpc_args {
         {
             let mut i = 0;
             ($({
-                //println!("{:?}", $args[i]);
-                //let x: $t = (&$args[i]).try_into().unwrap();
                 let x: $t = <&crate::rpc::typedefs::ArgValue as std::convert::TryInto<$t>>::try_into(&$args[i]).unwrap();
                 i += 1;
+                let _ = i; // Ignore "assigned variable never read" error
                 x
             }),+,)
         }

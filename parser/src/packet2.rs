@@ -34,24 +34,12 @@ pub struct EntityPacket<'replay> {
     pub payload: &'replay [u8],
 }
 
-/*#[derive(Debug, Serialize)]
-pub struct ParsedEntityProperty {
-    pub property: String,
-    pub value: ArgValue,
-}*/
-
 #[derive(Debug, Serialize)]
 pub struct EntityPropertyPacket<'argtype> {
     pub entity_id: u32,
     pub property: &'argtype str,
     pub value: ArgValue<'argtype>,
 }
-
-/*#[derive(Debug, Serialize)]
-pub struct ParsedEntityMethodCall {
-    pub method: String,
-    pub args: Vec<ArgValue>,
-}*/
 
 #[derive(Debug, Serialize)]
 pub struct EntityMethodPacket<'argtype> {
@@ -73,7 +61,6 @@ pub struct EntityCreatePacket<'argtype> {
     pub dir_y: f32,
     pub dir_z: f32,
     pub unknown: u32,
-    //pub state: &'a [u8],
     pub props: HashMap<&'argtype str, crate::rpc::typedefs::ArgValue<'argtype>>,
 }
 
@@ -161,18 +148,7 @@ pub enum PacketType<'replay, 'argtype> {
     EntityProperty(EntityPropertyPacket<'argtype>),
     EntityMethod(EntityMethodPacket<'argtype>),
     PropertyUpdate(PropertyUpdatePacket<'argtype>),
-    //Entity(EntityPacket<'a>), // 0x7 and 0x8 are known to be of this type
-    //Chat(ChatPacket<'a>),
-    //Timing(TimingPacket),
-    //ArtilleryHit(ArtilleryHitPacket<'a>),
-    //Banner(Banner),
-    //DamageReceived(DamageReceivedPacket),
-    //Type24(Type24Packet),
     PlayerOrientation(PlayerOrientationPacket),
-    //Type8_79(Vec<(u32, u32)>),
-    //Setup(SetupPacket),
-    //ShipDestroyed(ShipDestroyedPacket),
-    //VoiceLine(VoiceLinePacket),
     Unknown(&'replay [u8]),
 
     /// These are packets which we thought we understood, but couldn't parse
@@ -194,7 +170,6 @@ struct Entity<'argtype> {
 }
 
 pub struct Parser<'argtype> {
-    version: u32,
     specs: &'argtype Vec<EntitySpec>,
     entities: HashMap<u32, Entity<'argtype>>,
 }
@@ -202,7 +177,6 @@ pub struct Parser<'argtype> {
 impl<'argtype> Parser<'argtype> {
     pub fn new(entities: &'argtype Vec<EntitySpec>) -> Parser {
         Parser {
-            version: 0,
             specs: entities,
             entities: HashMap::new(),
         }
@@ -257,6 +231,7 @@ impl<'argtype> Parser<'argtype> {
                         argnum: idx,
                         argtype: format!("{:?}", arg),
                         packet: i.to_vec(),
+                        error: format!("{:?}", e),
                     }));
                 }
             };
@@ -282,6 +257,7 @@ impl<'argtype> Parser<'argtype> {
         let (i, is_slice) = le_u8(i)?;
         let (i, payload_size) = le_u8(i)?;
         let (i, unknown) = take(3usize)(i)?;
+        assert!(unknown == [0, 0, 0]); // Note: This is almost certainly the upper 3 bytes of a u32
         let payload = i;
         assert!(payload_size as usize == payload.len());
 
@@ -454,18 +430,13 @@ impl<'argtype> Parser<'argtype> {
             //println!("DBG: Entity {} got created twice!", entity_id);
         }
 
-        let (i, num_props) = le_u8(i)?;
-        /*println!(
-            "Creating entity type {} with {} props {:?}",
-            entity_type, num_props, i
-        );*/
+        let (i, num_props) = le_u8(state)?;
         let mut i = i;
         let mut props: HashMap<&str, _> = HashMap::new();
         let mut stored_props: Vec<_> = vec![];
         for _ in 0..num_props {
             let (new_i, prop_id) = le_u8(i)?;
             let spec = &self.specs[entity_type as usize - 1].properties[prop_id as usize];
-            //println!("spec {} {}: {:?}", prop_id, new_i.len(), spec.prop_type);
             let (new_i, value) = match spec.prop_type.parse_value(new_i) {
                 Ok(x) => x,
                 Err(e) => {
@@ -474,15 +445,14 @@ impl<'argtype> Parser<'argtype> {
                         argnum: prop_id as usize,
                         argtype: format!("{:?}", spec),
                         packet: i.to_vec(),
+                        error: format!("{:?}", e),
                     }));
                 }
             };
-            //println!("{:?}", value);
             i = new_i;
             stored_props.push(value.clone());
             props.insert(&spec.name, value);
         }
-        //println!("{:?}", props);
 
         self.entities.insert(
             entity_id,
@@ -506,7 +476,6 @@ impl<'argtype> Parser<'argtype> {
                 dir_y: diry,
                 dir_z: dirz,
                 unknown,
-                //state,
                 props,
             }),
         ))
@@ -657,16 +626,7 @@ impl<'argtype> Parser<'argtype> {
         let (i, clock) = le_f32(i)?;
         let (remaining, i) = take(packet_size)(i)?;
         let raw = i;
-        /*let (i, payload) = match packet_type {
-                0x7 | 0x8 => parse_entity_packet(version, packet_type, i)?,
-                0xA => parse_position_packet(i)?,
-                /*0x24 => {
-                    parse_type_24_packet(i)?
-                }*/
-                0x2b => parse_player_orientation_packet(i)?,
-                _ => parse_unknown_packet(i, packet_size)?,
-        };*/
-        let (i, payload) = match self.parse_naked_packet(packet_type, i) {
+        let (_i, payload) = match self.parse_naked_packet(packet_type, i) {
             Ok(x) => x,
             Err(nom::Err::Failure(Error {
                 kind: ErrorKind::UnsupportedReplayVersion(n),

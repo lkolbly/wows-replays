@@ -22,7 +22,6 @@ impl TrailsBuilder {
 impl AnalyzerBuilder for TrailsBuilder {
     fn build(&self, meta: &crate::ReplayMeta) -> Box<dyn Analyzer> {
         Box::new(TrailRenderer {
-            usernames: HashMap::new(),
             trails: HashMap::new(),
             player_trail: vec![],
             output: self.output.clone(),
@@ -32,7 +31,6 @@ impl AnalyzerBuilder for TrailsBuilder {
 }
 
 struct TrailRenderer {
-    usernames: HashMap<i32, String>,
     trails: HashMap<u32, Vec<(f32, f32)>>,
     player_trail: Vec<(f32, f32)>,
     output: String,
