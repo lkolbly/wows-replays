@@ -77,6 +77,7 @@ pub enum Ribbon {
     RocketNonPenetration,
     RocketTorpedoProtectionHit,
     ShotDownByAircraft,
+    Unknown(i8),
 }
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize)]
@@ -161,7 +162,10 @@ enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
     },
     CheckPing(u64),
     DamageReceived(Vec<DamageReceived>),
-    MinimapUpdate(Vec<MinimapUpdate>),
+    MinimapUpdate {
+        updates: Vec<MinimapUpdate>,
+        arg1: &'rawpacket Vec<crate::rpc::typedefs::ArgValue<'argtype>>,
+    },
     PropertyUpdate(&'rawpacket crate::packet2::PropertyUpdatePacket<'argtype>),
     Unknown(&'replay [u8]),
     Invalid(&'rawpacket crate::packet2::InvalidPacket<'replay>),
@@ -512,9 +516,7 @@ impl Analyzer for Decoder {
                         27 => Ribbon::ShotDownByAircraft,
                         28 => Ribbon::TorpedoProtectionHit,
                         30 => Ribbon::RocketTorpedoProtectionHit,
-                        _ => {
-                            panic!("Unrecognized ribbon {}", ribbon);
-                        }
+                        ribbon => Ribbon::Unknown(ribbon),
                     };
                     DecodedPacketPayload::Ribbon(ribbon)
                 } else if *method == "receiveDamagesOnShip" {
@@ -582,11 +584,16 @@ impl Analyzer for Decoder {
                         crate::rpc::typedefs::ArgValue::Array(a) => a,
                         _ => panic!(),
                     };
-                    assert!(args1.len() == 0);
+                    /*if args1.len() != 0 {
+                        println!("{:#?}", args1);
+                        panic!();
+                    }*/
 
-                    DecodedPacketPayload::MinimapUpdate(updates)
+                    DecodedPacketPayload::MinimapUpdate {
+                        updates,
+                        arg1: args1,
+                    }
                 } else {
-                    //DecodedPacketPayload::Other(&packet.payload)
                     DecodedPacketPayload::EntityMethod(match &packet.payload {
                         PacketType::EntityMethod(em) => em,
                         _ => panic!(),

@@ -755,7 +755,7 @@ fn parse_entity_packet(version: u32, supertype: u32, i: &[u8]) -> IResult<&[u8],
         Some(x) => x,
         None => {
             return Err(failure_from_kind(ErrorKind::UnsupportedReplayVersion(
-                version,
+                format!("{}", version),
             )))
         }
     };

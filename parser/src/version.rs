@@ -40,7 +40,7 @@ impl Datafiles {
         let mut p = base.clone();
         p.push(version.to_path());
         if !p.exists() {
-            Err(ErrorKind::UnsupportedReplayVersion(version.patch))
+            Err(ErrorKind::UnsupportedReplayVersion(version.to_path()))
         } else {
             Ok(Datafiles {
                 base_path: base,

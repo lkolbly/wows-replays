@@ -24,7 +24,7 @@ pub enum ErrorKind {
         err: std::str::Utf8Error,
     },
     #[error("Unsupported replay file version found")]
-    UnsupportedReplayVersion(u32),
+    UnsupportedReplayVersion(String),
     #[error("Unable to process packet")]
     UnableToProcessPacket {
         supertype: u32,
