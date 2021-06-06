@@ -7,26 +7,30 @@ use std::collections::HashMap;
 
 pub struct DecoderBuilder {
     silent: bool,
+    no_meta: bool,
     path: Option<String>,
 }
 
 impl DecoderBuilder {
-    pub fn new(silent: bool, output: Option<&str>) -> Self {
+    pub fn new(silent: bool, no_meta: bool, output: Option<&str>) -> Self {
         Self {
             silent,
+            no_meta,
             path: output.map(|s| s.to_string()),
         }
     }
 }
 
 impl AnalyzerBuilder for DecoderBuilder {
-    fn build(&self, _: &crate::ReplayMeta) -> Box<dyn Analyzer> {
-        Box::new(Decoder {
+    fn build(&self, meta: &crate::ReplayMeta) -> Box<dyn Analyzer> {
+        let mut decoder = Decoder {
             silent: self.silent,
             output: self.path.as_ref().map(|path| {
                 Box::new(std::fs::File::create(path).unwrap()) as Box<dyn std::io::Write>
             }),
-        })
+        };
+        decoder.write(&serde_json::to_string(&meta).unwrap());
+        Box::new(decoder)
     }
 }
 
@@ -92,6 +96,7 @@ pub enum DeathCause {
     AerialTorpedo,
     Detonation,
     Ramming,
+    Unknown(u32),
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -177,16 +182,29 @@ enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
 
 #[derive(Debug, Serialize)]
 struct DecodedPacket<'replay, 'argtype, 'rawpacket> {
-    //pub packet_size: u32,
     pub packet_type: u32,
     pub clock: f32,
     pub payload: DecodedPacketPayload<'replay, 'argtype, 'rawpacket>,
-    //pub raw: &'a [u8],
 }
 
 struct Decoder {
     silent: bool,
     output: Option<Box<dyn std::io::Write>>,
+}
+
+impl Decoder {
+    fn write(&mut self, line: &str) {
+        if !self.silent {
+            match self.output.as_mut() {
+                Some(f) => {
+                    writeln!(f, "{}", line).unwrap();
+                }
+                None => {
+                    println!("{}", line);
+                }
+            }
+        }
+    }
 }
 
 fn format_time_with_offset(offset: f32, clock: f32) -> String {
@@ -209,13 +227,6 @@ impl Analyzer for Decoder {
     fn finish(&self) {}
 
     fn process(&mut self, packet: &Packet<'_, '_>) {
-        /*let time = packet.clock + self.time_offset;
-        let minutes = (time / 60.0).floor() as i32;
-        let seconds = (time - minutes as f32 * 60.0).floor() as i32;*/
-        //println!("{:02}:{:02}: {:?}", minutes, seconds, packet.payload);
-        //println!("{}", serde_json::to_string(packet).unwrap());
-        //println!("{:?}", packet);
-
         let decoded = match &packet.payload {
             PacketType::EntityMethod(EntityMethodPacket {
                 entity_id,
@@ -349,7 +360,6 @@ impl Analyzer for Decoder {
                                     }
                                 }
                             }
-                            //println!("onArenaStateReceived: {:#?}", values);
                             /*
                             1: Player ID
                             5: Clan name
@@ -369,10 +379,7 @@ impl Analyzer for Decoder {
                             let shipid = values.get(&0x1d).unwrap();
                             let playerid = values.get(&0x1e).unwrap();
                             let playeravatarid = values.get(&0x1f).unwrap();
-                            /*println!(
-                                "{}: {}/{}/{}/{}",
-                                username, avatar, shipid, playerid, playeravatarid
-                            );*/
+
                             let mut raw = HashMap::new();
                             for (k, v) in values.iter() {
                                 raw.insert(*k, format!("{:?}", v));
@@ -393,15 +400,7 @@ impl Analyzer for Decoder {
                                 },
                                 raw: raw,
                             });
-                            /*self.usernames.insert(
-                                match avatar {
-                                    serde_pickle::value::Value::I64(i) => *i as i32,
-                                    _ => panic!(),
-                                },
-                                username.to_string(),
-                            );*/
                         }
-                        //println!("found {} players", players.len());
                     }
                     DecodedPacketPayload::OnArenaStateReceived {
                         arg0,
@@ -482,9 +481,7 @@ impl Analyzer for Decoder {
                         17 => DeathCause::Artillery,
                         18 => DeathCause::Artillery,
                         19 => DeathCause::Artillery,
-                        _ => {
-                            panic!(format!("Found unknown death_cause {}", cause));
-                        }
+                        cause => DeathCause::Unknown(cause),
                     };
                     DecodedPacketPayload::ShipDestroyed {
                         victim,
@@ -584,10 +581,6 @@ impl Analyzer for Decoder {
                         crate::rpc::typedefs::ArgValue::Array(a) => a,
                         _ => panic!(),
                     };
-                    /*if args1.len() != 0 {
-                        println!("{:#?}", args1);
-                        panic!();
-                    }*/
 
                     DecodedPacketPayload::MinimapUpdate {
                         updates,
@@ -621,16 +614,7 @@ impl Analyzer for Decoder {
         };
         //println!("{:#?}", decoded);
         //println!("{}", serde_json::to_string_pretty(&decoded).unwrap());
-        if !self.silent {
-            let encoded = serde_json::to_string(&decoded).unwrap();
-            match self.output.as_mut() {
-                Some(f) => {
-                    writeln!(f, "{}", encoded);
-                }
-                None => {
-                    println!("{}", encoded);
-                }
-            }
-        }
+        let encoded = serde_json::to_string(&decoded).unwrap();
+        self.write(&encoded);
     }
 }

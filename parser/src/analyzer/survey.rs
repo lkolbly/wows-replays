@@ -37,7 +37,7 @@ impl AnalyzerBuilder for SurveyBuilder {
         Box::new(Survey {
             meta: Some((*meta).clone()),
             skip_decoder: self.skip_decoder,
-            decoder: decoder::DecoderBuilder::new(true, None).build(meta),
+            decoder: decoder::DecoderBuilder::new(true, true, None).build(meta),
             stats: self.stats.clone(),
         })
     }
