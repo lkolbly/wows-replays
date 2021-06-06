@@ -41,6 +41,12 @@ pub enum ErrorKind {
     },
     #[error("Unknown FixedDict flag")]
     UnknownFixedDictFlag { flag: u8, packet: Vec<u8> },
+    #[error("Internal prop set on unsupported entity")]
+    UnsupportedInternalPropSet {
+        entity_id: u32,
+        entity_type: String,
+        payload: Vec<u8>,
+    },
     #[error("Data file not found")]
     DatafileNotFound { version: String, path: String },
     #[error("Decoder ring failure")]

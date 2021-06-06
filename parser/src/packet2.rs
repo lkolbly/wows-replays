@@ -107,9 +107,9 @@ pub struct InvalidPacket<'a> {
 }
 
 #[derive(Debug, Serialize)]
-pub struct BasePlayerCreatePacket<'replay> {
+pub struct BasePlayerCreatePacket<'replay, 'argtype> {
     pub entity_id: u32,
-    pub entity_type: u16,
+    pub entity_type: &'argtype str,
     pub state: &'replay [u8],
 }
 
@@ -144,15 +144,23 @@ pub struct EntityEnterPacket {
 }
 
 #[derive(Debug, Serialize)]
+pub struct PropertyUpdatePacket<'argtype> {
+    pub entity_id: i32,
+    pub property: &'argtype str,
+    pub update_cmd: crate::nested_property_path::PropertyNesting<'argtype>,
+}
+
+#[derive(Debug, Serialize)]
 pub enum PacketType<'replay, 'argtype> {
     Position(PositionPacket),
-    BasePlayerCreate(BasePlayerCreatePacket<'replay>),
+    BasePlayerCreate(BasePlayerCreatePacket<'replay, 'argtype>),
     CellPlayerCreate(CellPlayerCreatePacket<'replay>),
     EntityEnter(EntityEnterPacket),
     EntityLeave(EntityLeavePacket),
     EntityCreate(EntityCreatePacket<'argtype>),
     EntityProperty(EntityPropertyPacket<'argtype>),
     EntityMethod(EntityMethodPacket<'argtype>),
+    PropertyUpdate(PropertyUpdatePacket<'argtype>),
     //Entity(EntityPacket<'a>), // 0x7 and 0x8 are known to be of this type
     //Chat(ChatPacket<'a>),
     //Timing(TimingPacket),
@@ -282,8 +290,6 @@ impl<'argtype> Parser<'argtype> {
 
         let spec = &self.specs[entity_type as usize - 1];
 
-        println!("nprops = {}", spec.properties.len());
-        println!("{} {:?}", is_slice, payload);
         assert!(is_slice & 0xFE == 0);
 
         let mut reader = bitreader::BitReader::new(payload);
@@ -292,41 +298,38 @@ impl<'argtype> Parser<'argtype> {
         let prop_idx = reader
             .read_u8(spec.properties.len().next_power_of_two().trailing_zeros() as u8)
             .unwrap();
-        println!("prop_idx={}", prop_idx);
-        println!("{}", spec.properties[prop_idx as usize].name);
+        if prop_idx as usize >= entity.properties.len() {
+            // This is almost certainly a nested property set on the player avatar.
+            // Currently, we assume that all properties are created when the entity is
+            // created. However, apparently the properties can go un-initialized at the
+            // beginning, and then later get created by a nested property update.
+            //
+            // We should do two things:
+            // - Store the entity's properties as a HashMap
+            // - Separate finding the path from updating the property value, and then here
+            //   we can create the entry if the property hasn't been created yet.
+            return Err(failure_from_kind(
+                crate::ErrorKind::UnsupportedInternalPropSet {
+                    entity_id,
+                    entity_type: spec.name.clone(),
+                    payload: payload.to_vec(),
+                },
+            ));
+        }
 
-        crate::nested_property_path::get_nested_prop_path_helper(
+        let update_cmd = crate::nested_property_path::get_nested_prop_path_helper(
             is_slice & 0x1 == 1,
             &spec.properties[prop_idx as usize].prop_type,
             &mut entity.properties[prop_idx as usize],
             reader,
         );
 
-        /*let cont2 = reader.read_u8(1).unwrap();
-        println!("{} {} {}", cont, prop_idx, cont2);
-        let propspec = match &spec.properties[prop_idx as usize].prop_type {
-            crate::rpc::typedefs::ArgType::FixedDict((_, d)) => d,
-            _ => panic!(),
-        };
-        println!(
-            "{} {}",
-            propspec.len(),
-            propspec.len().next_power_of_two().trailing_zeros()
-        );
-        let prop_idx = reader
-            .read_u8(propspec.len().next_power_of_two().trailing_zeros() as u8)
-            .unwrap();
-        let cont = reader.read_u8(1).unwrap();
-        println!("{} {}", prop_idx, cont);
-        println!("{:#?}", propspec[prop_idx as usize]);*/
-
-        //panic!();
         Ok((
             i,
-            PacketType::EntityEnter(EntityEnterPacket {
-                entity_id: 0,
-                space_id: 0,
-                vehicle_id: 0,
+            PacketType::PropertyUpdate(PropertyUpdatePacket {
+                entity_id: entity_id as i32,
+                update_cmd,
+                property: &spec.properties[prop_idx as usize].name,
             }),
         ))
     }
@@ -412,6 +415,7 @@ impl<'argtype> Parser<'argtype> {
         let (i, entity_id) = le_u32(i)?;
         let (i, entity_type) = le_u16(i)?;
         let (i, state) = take(i.len())(i)?;
+        let spec = &self.specs[entity_type as usize - 1];
         self.entities.insert(
             entity_id,
             Entity {
@@ -424,7 +428,7 @@ impl<'argtype> Parser<'argtype> {
             i,
             PacketType::BasePlayerCreate(BasePlayerCreatePacket {
                 entity_id,
-                entity_type,
+                entity_type: &spec.name,
                 state,
             }),
         ))

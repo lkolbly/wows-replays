@@ -148,7 +148,7 @@ enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
     },
     EntityMethod(&'rawpacket EntityMethodPacket<'argtype>),
     EntityProperty(&'rawpacket crate::packet2::EntityPropertyPacket<'argtype>),
-    BasePlayerCreate(&'rawpacket crate::packet2::BasePlayerCreatePacket<'replay>),
+    BasePlayerCreate(&'rawpacket crate::packet2::BasePlayerCreatePacket<'replay, 'argtype>),
     CellPlayerCreate(&'rawpacket crate::packet2::CellPlayerCreatePacket<'replay>),
     EntityEnter(&'rawpacket crate::packet2::EntityEnterPacket),
     EntityLeave(&'rawpacket crate::packet2::EntityLeavePacket),
@@ -162,6 +162,7 @@ enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
     CheckPing(u64),
     DamageReceived(Vec<DamageReceived>),
     MinimapUpdate(Vec<MinimapUpdate>),
+    PropertyUpdate(&'rawpacket crate::packet2::PropertyUpdatePacket<'argtype>),
     Unknown(&'replay [u8]),
     Invalid(&'rawpacket crate::packet2::InvalidPacket<'replay>),
     /*
@@ -602,6 +603,7 @@ impl Analyzer for Decoder {
             PacketType::EntityEnter(e) => DecodedPacketPayload::EntityEnter(e),
             PacketType::EntityLeave(e) => DecodedPacketPayload::EntityLeave(e),
             PacketType::EntityCreate(e) => DecodedPacketPayload::EntityCreate(e),
+            PacketType::PropertyUpdate(update) => DecodedPacketPayload::PropertyUpdate(update),
             PacketType::Unknown(u) => DecodedPacketPayload::Unknown(&u),
             PacketType::Invalid(u) => DecodedPacketPayload::Invalid(&u),
         };

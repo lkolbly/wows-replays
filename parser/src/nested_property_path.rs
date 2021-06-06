@@ -1,5 +1,42 @@
 use crate::rpc::typedefs::{ArgType, ArgValue};
 use bitreader::BitReader;
+use serde_derive::Serialize;
+
+#[derive(Debug, Serialize)]
+pub enum PropertyNestLevel<'argtype> {
+    ArrayIndex(usize),
+    DictKey(&'argtype str),
+}
+
+#[derive(Debug, Serialize)]
+pub enum UpdateAction<'argtype> {
+    SetKey {
+        key: &'argtype str,
+        value: ArgValue<'argtype>,
+    },
+    SetRange {
+        start: usize,
+        stop: usize,
+        values: Vec<ArgValue<'argtype>>,
+    },
+    SetElement {
+        index: usize,
+        value: ArgValue<'argtype>,
+    },
+    RemoveElement {
+        index: usize,
+    },
+    RemoveRange {
+        start: usize,
+        stop: usize,
+    },
+}
+
+#[derive(Debug, Serialize)]
+pub struct PropertyNesting<'argtype> {
+    levels: Vec<PropertyNestLevel<'argtype>>,
+    action: UpdateAction<'argtype>,
+}
 
 /// This function emulates Python's slice semantics
 fn slice_insert<T>(idx1: usize, idx2: usize, target: &mut Vec<T>, mut source: Vec<T>) {
@@ -22,29 +59,41 @@ fn nested_update_command<'argtype>(
     t: &'argtype ArgType,
     mut prop_value: &mut ArgValue<'argtype>,
     mut reader: BitReader,
-) {
+) -> PropertyNesting<'argtype> {
     match (t, &mut prop_value) {
         (ArgType::FixedDict((_, entries)), _) => {
             let entry_idx = reader
                 .read_u8(entries.len().next_power_of_two().trailing_zeros() as u8)
                 .unwrap();
-            println!("{}: {:#?}", entry_idx, entries[entry_idx as usize]);
             while reader.remaining() % 8 != 0 {
                 reader.read_u8(1).unwrap();
             }
             let mut remaining = vec![0; reader.remaining() as usize / 8];
             reader.read_u8_slice(&mut remaining[..]).unwrap();
             assert!(reader.remaining() == 0);
-            println!("{:?}", remaining);
-            let value = entries[entry_idx as usize]
+            let (_, value) = entries[entry_idx as usize]
                 .prop_type
                 .parse_value(&remaining[..])
                 .unwrap();
-            println!("New value: {:#?}", value);
+            match prop_value {
+                ArgValue::FixedDict(d) => {
+                    d.insert(&entries[entry_idx as usize].name, value.clone());
+                }
+                ArgValue::NullableFixedDict(Some(d)) => {
+                    d.insert(&entries[entry_idx as usize].name, value.clone());
+                }
+                ArgValue::NullableFixedDict(None) => unimplemented!(),
+                _ => panic!("FixedDict type caused unexpected value {:?}", prop_value),
+            }
+            return PropertyNesting {
+                levels: vec![],
+                action: UpdateAction::SetKey {
+                    key: &entries[entry_idx as usize].name,
+                    value: value,
+                },
+            };
         }
         (ArgType::Array((_size, element_type)), ArgValue::Array(ref mut elements)) => {
-            println!("{:#?}", elements);
-            println!("{:#?}", element_type);
             let idx_bits = if is_slice {
                 elements.len() + 1
             } else {
@@ -59,20 +108,23 @@ fn nested_update_command<'argtype>(
                 None
             };
 
-            println!("{}", reader.remaining());
             while reader.remaining() % 8 != 0 {
                 reader.read_u8(1).unwrap();
             }
-            println!("{}", reader.remaining());
             let mut remaining = vec![0; reader.remaining() as usize / 8];
             reader.read_u8_slice(&mut remaining[..]).unwrap();
-            println!("{:?}", remaining);
 
             if remaining.len() == 0 {
                 // Remove elements
                 if is_slice {
                     slice_insert(idx1 as usize, idx2.unwrap() as usize, elements, vec![]);
-                    return;
+                    return PropertyNesting {
+                        levels: vec![],
+                        action: UpdateAction::RemoveRange {
+                            start: idx1 as usize,
+                            stop: idx2.unwrap() as usize,
+                        },
+                    };
                 } else {
                     unimplemented!();
                 }
@@ -86,21 +138,30 @@ fn nested_update_command<'argtype>(
                 new_elements.push(element);
             }
 
-            println!("{:#?}", new_elements);
-
             if is_slice {
-                println!("indices: {}-{}", idx1, idx2.unwrap());
                 slice_insert(
                     idx1 as usize,
                     idx2.unwrap() as usize,
                     elements,
-                    new_elements,
+                    new_elements.clone(),
                 );
-                println!("{:#?}", elements);
+                return PropertyNesting {
+                    levels: vec![],
+                    action: UpdateAction::SetRange {
+                        start: idx1 as usize,
+                        stop: idx2.unwrap() as usize,
+                        values: new_elements,
+                    },
+                };
             } else {
                 elements[idx1 as usize] = new_elements.remove(0);
-                //unimplemented!();
-                println!("{:#?}", elements);
+                return PropertyNesting {
+                    levels: vec![],
+                    action: UpdateAction::SetElement {
+                        index: idx1 as usize,
+                        value: elements[idx1 as usize].clone(),
+                    },
+                };
             }
         }
         x => {
@@ -115,13 +176,10 @@ pub fn get_nested_prop_path_helper<'argtype>(
     t: &'argtype ArgType,
     prop_value: &mut ArgValue<'argtype>,
     mut reader: BitReader,
-) {
+) -> PropertyNesting<'argtype> {
     let cont = reader.read_u8(1).unwrap();
     if cont == 0 {
-        println!("Remaining: {}", reader.remaining());
-        nested_update_command(is_slice, t, prop_value, reader);
-        //panic!();
-        return;
+        return nested_update_command(is_slice, t, prop_value, reader);
     }
     //println!("{} {} {}", cont, prop_idx, cont2);
     match (t, prop_value) {
@@ -129,56 +187,55 @@ pub fn get_nested_prop_path_helper<'argtype>(
             crate::rpc::typedefs::ArgType::FixedDict((_, propspec)),
             ArgValue::FixedDict(propvalue),
         ) => {
-            println!(
-                "{} {}",
-                propspec.len(),
-                propspec.len().next_power_of_two().trailing_zeros()
-            );
             let prop_idx = reader
                 .read_u8(propspec.len().next_power_of_two().trailing_zeros() as u8)
                 .unwrap();
             let prop_id = &propspec[prop_idx as usize].name;
             //let cont = reader.read_u8(1).unwrap();
-            println!("{} {}", prop_idx, cont);
             //println!("{:#?}", propspec[prop_idx as usize]);
-            get_nested_prop_path_helper(
+            let mut nesting = get_nested_prop_path_helper(
                 is_slice,
                 &propspec[prop_idx as usize].prop_type,
                 propvalue.get_mut(prop_id.as_str()).unwrap(),
                 reader,
             );
+            nesting.levels.push(PropertyNestLevel::DictKey(
+                &propspec[prop_idx as usize].name,
+            ));
+            return nesting;
         }
         (
             crate::rpc::typedefs::ArgType::FixedDict((_, propspec)),
             ArgValue::NullableFixedDict(Some(propvalue)),
         ) => {
-            println!(
-                "{} {}",
-                propspec.len(),
-                propspec.len().next_power_of_two().trailing_zeros()
-            );
             let prop_idx = reader
                 .read_u8(propspec.len().next_power_of_two().trailing_zeros() as u8)
                 .unwrap();
             let prop_id = &propspec[prop_idx as usize].name;
             //let cont = reader.read_u8(1).unwrap();
-            println!("{} {}", prop_idx, cont);
             //println!("{:#?}", propspec[prop_idx as usize]);
-            get_nested_prop_path_helper(
+            let mut nesting = get_nested_prop_path_helper(
                 is_slice,
                 &propspec[prop_idx as usize].prop_type,
                 propvalue.get_mut(prop_id.as_str()).unwrap(),
                 reader,
             );
+            nesting.levels.insert(
+                0,
+                PropertyNestLevel::DictKey(&propspec[prop_idx as usize].name),
+            );
+            return nesting;
         }
         (crate::rpc::typedefs::ArgType::Array((size, element_type)), ArgValue::Array(arr)) => {
-            println!("# of elements: {} ({:?})", arr.len(), size);
             let idx = reader
                 .read_u8(arr.len().next_power_of_two().trailing_zeros() as u8)
                 .unwrap();
-            println!("Array idx: {}", idx);
-            get_nested_prop_path_helper(is_slice, element_type, &mut arr[idx as usize], reader);
-            return;
+            let mut nesting =
+                get_nested_prop_path_helper(is_slice, element_type, &mut arr[idx as usize], reader);
+            nesting
+                .levels
+                .push(PropertyNestLevel::ArrayIndex(idx as usize));
+            return nesting;
         }
         x => {
             println!("{:#?}", x);
