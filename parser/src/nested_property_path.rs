@@ -196,9 +196,10 @@ pub fn get_nested_prop_path_helper<'argtype>(
                 propvalue.get_mut(prop_id.as_str()).unwrap(),
                 reader,
             );
-            nesting.levels.push(PropertyNestLevel::DictKey(
-                &propspec[prop_idx as usize].name,
-            ));
+            nesting.levels.insert(
+                0,
+                PropertyNestLevel::DictKey(&propspec[prop_idx as usize].name),
+            );
             return nesting;
         }
         (
@@ -231,7 +232,7 @@ pub fn get_nested_prop_path_helper<'argtype>(
                 get_nested_prop_path_helper(is_slice, element_type, &mut arr[idx as usize], reader);
             nesting
                 .levels
-                .push(PropertyNestLevel::ArrayIndex(idx as usize));
+                .insert(0, PropertyNestLevel::ArrayIndex(idx as usize));
             return nesting;
         }
         x => {

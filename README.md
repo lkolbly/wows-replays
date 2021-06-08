@@ -6,7 +6,9 @@ This program parses `.wowsreplay` files from the World of Warships game. There a
 Installing
 ==========
 
-This project is written in Rust, so first, [install Rust](https://www.rust-lang.org/learn/get-started). Then, clone this repo (or download the zipfile), cd into the root directory, and run:
+This project is written in Rust, so first, [install Rust](https://www.rust-lang.org/learn/get-started). Then, clone this repo (or download the zipfile), cd into the root directory. You will need to place a folder `versions/` in the root directory, containing the `scripts/` output unpacked from the game data. For example, `versions/0.10.4/scripts/` should contain an `entities.xml` file.
+
+Then run:
 ```
 $ cargo build --release
 ```
@@ -16,6 +18,8 @@ $ ./target/release/replayshark help
 ```
 
 And away you go!
+
+(alternatively, you can download one of the pre-built binaries, which bundles the scripts data for several versions)
 
 Dump Utility
 ============
@@ -30,58 +34,76 @@ $ ./replayshark dump <my replay file>
 The first line will be the JSON-encoded meta information from the beginning of the file. The rest of the output will be JSON-encoded packets, containing the following fields you might care about:
 - `clock`: The timestamp, in seconds since the game start, of the packet.
 - `payload`: The parsed payload.
-- `raw`: The raw bytes of the packet, if you can't get what you want from the payload (please feel free to upstream anything you figure out!).
 
 The payload has a single key/value pair, where the key is the type of the object. For example, the `DamageReceived` packet has a payload that might look like:
 ```
-"payload":{"DamageReceived":{"recipient":604965,"damage":[[604981,1254.0]]}}
+"DamageReceived": {
+    "victim": 576272,
+    "aggressors": [
+        {
+            "aggressor": 576266,
+            "damage": 3335.0
+        }
+    ]
+}
 ```
-which indicates that the recipient `604965` received 1254 units of damage from `604981`. (you can determine the entity IDs from the "Setup" packet type)
+which indicates that the recipient `576272` received 3335 units of damage from `576266`. (you can determine which the entity IDs map to which players from the "OnArenaStateReceived" packet type)
 
-The `wowsreplay` format has a majority of packets under the `7` and `8` packet types, which I refer to as "Entity" packets. These packets have not yet been decoded (their packet ID is unknown), although it is known that they contain an entity ID (that's all that's known about them).
+A majority of the game information is encoded using properties and RPC-style method calls. Properties are set using the "EntityProperty" payload, for example this payload:
+```
+"EntityProperty": {
+    "entity_id": 511260,
+    "property": "health",
+    "value":62670.0
+}
+```
+indicates that the entity `511260` now has a 62670 health.
 
-Some packets will appear as "Invalid" packets, these are packets for which the packet ID is known, but for some reason the parser decided it didn't know what to do with the packet. If you find one of these, please feel free to copy the packet into a new issue!
+Initial values for properties will be set for the object during its `EntityCreate` call.
 
-Trace Utility
-=============
+Additionally, certain properties (in particular properties composed of arrays and/or dictionaries) can be partially updated. For example, the "state" property on the battle state manager (the entity created with type "") can have the team scores updated using this payload:
+```
+"PropertyUpdate": {
+    "entity_id": 511248,
+    "property": "state",
+    "update_cmd": {
+        "levels": [
+            {"DictKey": "missions"},
+            {"DictKey": "teamsScore"},
+            {"ArrayIndex": 0}
+        ],
+        "action": {
+            "SetKey": {
+                "key": "score",
+                "value": 204
+            }
+        }
+    }
+}
+```
+The "levels" key of the update command indicates the path to update, in this instance the `state["missions"]["teamsScore"][0]` dictionary, updating the `score` key to 204.
 
-The `trace` command requires that you have unpacked the minimap resources into the `res_unpack` folder in your working directory.
+Entity methods are encoded using the `EntityMethod` payload.
+
+Some entity method calls have been decoded into an application-specific payload. The `DamageReceived` example above is a packet that originally was a RPC method call but the dump utility converted into a more friendly format.
+
+Some packets will appear as "Invalid" packets, these are packets for which the packet ID is known, but for some reason the parser decided it didn't know what to do with the packet. If you find one of these, please feel free to send me the .wowsreplay file in a new issue!
 
 Supported Versions
 ==================
 
-The following game versions are currently supported:
-- 0.9.4
-- 0.9.5 (and .1)
-- 0.9.6 (and .1)
-- 0.9.7
+Versions 0.9.10 through 0.10.4 have currently been tested.
 
 The version policy for this component is forward-looking: After game version X is released, I won't work very hard to decode new packets from version X-1 and below. To the extent practical, though, support for older versions will be maintained - but it is not guaranteed that any version other than the "current" will work.
 
-Packet Support
-==============
+The distributed executable contains files extracted from the game, but you can provide your own data files by placing the in the `versions/<version>/` folder in your working directory - for example, `versions/0.10.4/scripts/` should contain the `scripts/` folder unpacked using the [WOWS Unpack Tool](https://forum.worldofwarships.eu/topic/113847-all-wows-unpack-tool-unpack-game-client-resources/).
 
-The following packets are parsed at least partially:
-- The initial "Setup" packet which enumerates the players, their ships, camo configuration, etc. is partially decoded.
- - The general structure is partially decoded. Most fields are not decoded.
-- Position and PlayerOrientation: The position of other ships and of the player and of the camera.
- - Some fields are not fully decoded.
-- Chat: Emitted whenever a player sends a chat message.
-- DamageReceived: Emitted whenever damage is dealt to a ship.
-- ArtilleryHit: Emitted whenever either the player's guns hit a ship or whenever the player's ship is hit by shells. This packet has many unknown fields.
-- Banner: Emitted when the player receives a banner.
-- ShipDestroyed: Emitted when a ship kills another, contains both victim and perpetrator IDs as well as cause (e.g. artillery, fire, ramming).
+Acknowledgements
+================
 
-Packet wishlist
-===============
+Almost all of my understanding of the packet structure comes from [Monstrofil/replays_unpack](https://github.com/Monstrofil/replays_unpack)'s work, and a lot of the parsing code here is rewritten from that code.
 
-The following information is not yet extracted from replays, but is information that is known to exist in the replay file:
-- Torpedoes.
-- Planes.
-- Ship visibility/hidden status (and the player's "detected" status)
-- Incapacitation type.
-- Consumable usage.
-- Smoke.
+Additionally, the framing file format (surrounding the encoded packets) decoding algorithms derive from [evido/wotreplay-parser](https://github.com/evido/wotreplay-parser).
 
 Contributing
 ============

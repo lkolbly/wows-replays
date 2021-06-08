@@ -62,26 +62,7 @@ impl Datafiles {
                 version: format!("{:?}", self.version),
                 path: path.to_string(),
             });
-            /*panic!(
-                "Could not find file {} for version {}",
-                path,
-                self.version.to_path()
-            );*/
         }
         Ok(Cow::from(std::fs::read(p).unwrap()))
     }
-
-    /*pub fn lookup(&self, path: &str) -> PathBuf {
-        let mut p = self.base_path.clone();
-        p.push(self.version.to_path());
-        p.push(path);
-        if !p.exists() {
-            panic!(
-                "Could not find file {} for version {}",
-                path,
-                self.version.to_path()
-            );
-        }
-        p
-    }*/
 }

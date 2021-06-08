@@ -115,7 +115,7 @@ pub struct OnArenaStateReceivedPlayer {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DamageReceived {
-    target: i32,
+    aggressor: i32,
     damage: f32,
 }
 
@@ -168,7 +168,10 @@ enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
         players: Vec<OnArenaStateReceivedPlayer>,
     },
     CheckPing(u64),
-    DamageReceived(Vec<DamageReceived>),
+    DamageReceived {
+        victim: u32,
+        aggressors: Vec<DamageReceived>,
+    },
     MinimapUpdate {
         updates: Vec<MinimapUpdate>,
         arg1: &'rawpacket Vec<crate::rpc::typedefs::ArgValue<'argtype>>,
@@ -529,7 +532,7 @@ impl Analyzer for Decoder {
                             _ => panic!(),
                         };
                         v.push(DamageReceived {
-                            target: match map.get("vehicleID").unwrap() {
+                            aggressor: match map.get("vehicleID").unwrap() {
                                 crate::rpc::typedefs::ArgValue::Int32(i) => *i,
                                 _ => panic!(),
                             },
@@ -539,7 +542,10 @@ impl Analyzer for Decoder {
                             },
                         });
                     }
-                    DecodedPacketPayload::DamageReceived(v)
+                    DecodedPacketPayload::DamageReceived {
+                        victim: *entity_id,
+                        aggressors: v,
+                    }
                 } else if *method == "onCheckGamePing" {
                     let (ping,) = unpack_rpc_args!(args, u64);
                     DecodedPacketPayload::CheckPing(ping)
