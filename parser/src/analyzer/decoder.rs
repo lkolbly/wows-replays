@@ -23,11 +23,13 @@ impl DecoderBuilder {
 
 impl AnalyzerBuilder for DecoderBuilder {
     fn build(&self, meta: &crate::ReplayMeta) -> Box<dyn Analyzer> {
+        let version = crate::version::Version::from_client_exe(&meta.clientVersionFromExe);
         let mut decoder = Decoder {
             silent: self.silent,
             output: self.path.as_ref().map(|path| {
                 Box::new(std::fs::File::create(path).unwrap()) as Box<dyn std::io::Write>
             }),
+            version: version.build(),
         };
         if !self.no_meta {
             decoder.write(&serde_json::to_string(&meta).unwrap());
@@ -104,10 +106,13 @@ pub enum DeathCause {
 #[derive(Debug, Clone, Serialize)]
 pub struct OnArenaStateReceivedPlayer {
     username: String,
+    clan: String,
     avatarid: i64,
     shipid: i64,
     playerid: i64,
     //playeravatarid: i64,
+    teamid: i64,
+    health: i64,
 
     // TODO: Replace String with the actual pickle value (which is cleanly serializable)
     raw: HashMap<i64, String>,
@@ -195,6 +200,7 @@ struct DecodedPacket<'replay, 'argtype, 'rawpacket> {
 struct Decoder {
     silent: bool,
     output: Option<Box<dyn std::io::Write>>,
+    version: u32,
 }
 
 impl Decoder {
@@ -365,6 +371,33 @@ impl Analyzer for Decoder {
                                     }
                                 }
                             }
+
+                            let keys: HashMap<&'static str, i64> = if self.version >= 4365481 {
+                                // 0.10.7
+                                let mut h = HashMap::new();
+                                h.insert("avatarid", 0x1);
+                                h.insert("clan", 0x5);
+                                h.insert("health", 0x16);
+                                h.insert("username", 0x17);
+                                h.insert("shipid", 0x1e);
+                                h.insert("playerid", 0x1f);
+                                h.insert("playeravatarid", 0x20);
+                                h.insert("team", 0x21);
+                                h
+                            } else {
+                                // 0.10.6 and earlier
+                                let mut h = HashMap::new();
+                                h.insert("avatarid", 0x1);
+                                h.insert("clan", 0x5);
+                                h.insert("health", 0x15);
+                                h.insert("username", 0x16);
+                                h.insert("shipid", 0x1d);
+                                h.insert("playerid", 0x1e);
+                                h.insert("playeravatarid", 0x1f);
+                                h.insert("team", 0x20);
+                                h
+                            };
+
                             /*
                             1: Player ID
                             5: Clan name
@@ -374,16 +407,28 @@ impl Analyzer for Decoder {
                             1e: Player ship ID
                             1f: Player ship ID (why does this appear twice?)
                             */
-                            let avatar = values.get(&0x1).unwrap();
-                            let username = values.get(&0x16).unwrap();
+                            let avatar = values.get(keys.get("avatarid").unwrap()).unwrap();
+                            let username = values.get(keys.get("username").unwrap()).unwrap();
                             let username = std::str::from_utf8(match username {
                                 serde_pickle::value::Value::Bytes(u) => u,
-                                _ => panic!(),
+                                _ => {
+                                    panic!("{:?}", username);
+                                }
                             })
                             .unwrap();
-                            let shipid = values.get(&0x1d).unwrap();
-                            let playerid = values.get(&0x1e).unwrap();
-                            let playeravatarid = values.get(&0x1f).unwrap();
+                            let clan = values.get(keys.get("clan").unwrap()).unwrap();
+                            let clan = match clan {
+                                serde_pickle::value::Value::String(s) => s.clone(),
+                                _ => {
+                                    panic!("{:?}", clan);
+                                }
+                            };
+                            let shipid = values.get(keys.get("shipid").unwrap()).unwrap();
+                            let playerid = values.get(keys.get("playerid").unwrap()).unwrap();
+                            let playeravatarid =
+                                values.get(keys.get("playeravatarid").unwrap()).unwrap();
+                            let team = values.get(keys.get("team").unwrap()).unwrap();
+                            let health = values.get(keys.get("health").unwrap()).unwrap();
 
                             let mut raw = HashMap::new();
                             for (k, v) in values.iter() {
@@ -391,6 +436,7 @@ impl Analyzer for Decoder {
                             }
                             players_out.push(OnArenaStateReceivedPlayer {
                                 username: username.to_string(),
+                                clan: clan,
                                 avatarid: match avatar {
                                     serde_pickle::value::Value::I64(i) => *i,
                                     _ => panic!("foo"),
@@ -400,6 +446,14 @@ impl Analyzer for Decoder {
                                     _ => panic!("foo"),
                                 },
                                 playerid: match playerid {
+                                    serde_pickle::value::Value::I64(i) => *i,
+                                    _ => panic!("foo"),
+                                },
+                                teamid: match team {
+                                    serde_pickle::value::Value::I64(i) => *i,
+                                    _ => panic!("foo"),
+                                },
+                                health: match team {
                                     serde_pickle::value::Value::I64(i) => *i,
                                     _ => panic!("foo"),
                                 },

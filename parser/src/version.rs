@@ -8,6 +8,7 @@ pub struct Version {
     major: u32,
     minor: u32,
     patch: u32,
+    build: u32,
 }
 
 impl Version {
@@ -18,11 +19,16 @@ impl Version {
             major: parts[0].parse::<u32>().unwrap(),
             minor: parts[1].parse::<u32>().unwrap(),
             patch: parts[2].parse::<u32>().unwrap(),
+            build: parts[3].parse::<u32>().unwrap(),
         }
     }
 
     fn to_path(&self) -> String {
         format!("{}.{}.{}", self.major, self.minor, self.patch)
+    }
+
+    pub fn build(&self) -> u32 {
+        self.build
     }
 }
 
