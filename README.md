@@ -92,7 +92,7 @@ Some packets will appear as "Invalid" packets, these are packets for which the p
 Supported Versions
 ==================
 
-Versions 0.9.10 through 0.10.4 have currently been tested.
+Versions 0.9.10 through 0.10.7 have currently been tested.
 
 The version policy for this component is forward-looking: After game version X is released, I won't work very hard to decode new packets from version X-1 and below. To the extent practical, though, support for older versions will be maintained - but it is not guaranteed that any version other than the "current" will work.
 
@@ -104,6 +104,8 @@ Acknowledgements
 Almost all of my understanding of the packet structure comes from [Monstrofil/replays_unpack](https://github.com/Monstrofil/replays_unpack)'s work, and a lot of the parsing code here is rewritten from that code.
 
 Additionally, the framing file format (surrounding the encoded packets) decoding algorithms derive from [evido/wotreplay-parser](https://github.com/evido/wotreplay-parser).
+
+The contents of the `versions/` folder are the intellectual property of Wargaming.net.
 
 Contributing
 ============
