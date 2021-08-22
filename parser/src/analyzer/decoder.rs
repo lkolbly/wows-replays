@@ -182,6 +182,10 @@ enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
         arg1: &'rawpacket Vec<crate::rpc::typedefs::ArgValue<'argtype>>,
     },
     PropertyUpdate(&'rawpacket crate::packet2::PropertyUpdatePacket<'argtype>),
+    BattleEnd {
+        winning_team: i8,
+        unknown: u8,
+    },
     Unknown(&'replay [u8]),
     Invalid(&'rawpacket crate::packet2::InvalidPacket<'replay>),
     /*
@@ -647,6 +651,19 @@ impl Analyzer for Decoder {
                     DecodedPacketPayload::MinimapUpdate {
                         updates,
                         arg1: args1,
+                    }
+                } else if *method == "onBattleEnd" {
+                    let winning_team = match &args[0] {
+                        crate::rpc::typedefs::ArgValue::Int8(i) => *i,
+                        _ => panic!("foo"),
+                    };
+                    let unknown = match &args[1] {
+                        crate::rpc::typedefs::ArgValue::Uint8(i) => *i,
+                        _ => panic!("foo"),
+                    };
+                    DecodedPacketPayload::BattleEnd {
+                        winning_team,
+                        unknown,
                     }
                 } else {
                     DecodedPacketPayload::EntityMethod(match &packet.payload {
