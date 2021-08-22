@@ -7,7 +7,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-nom = "6.0.0-alpha1"
+nom = "7.0.0"
 hexdump = "0.1.0"
 flate2 = "1.0.14"
 serde = "1.0"
