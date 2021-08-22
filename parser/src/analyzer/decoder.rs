@@ -29,7 +29,7 @@ impl AnalyzerBuilder for DecoderBuilder {
             output: self.path.as_ref().map(|path| {
                 Box::new(std::fs::File::create(path).unwrap()) as Box<dyn std::io::Write>
             }),
-            version: version.build(),
+            version: version,
         };
         if !self.no_meta {
             decoder.write(&serde_json::to_string(&meta).unwrap());
@@ -204,7 +204,7 @@ struct DecodedPacket<'replay, 'argtype, 'rawpacket> {
 struct Decoder {
     silent: bool,
     output: Option<Box<dyn std::io::Write>>,
-    version: u32,
+    version: crate::version::Version,
 }
 
 impl Decoder {
@@ -376,7 +376,10 @@ impl Analyzer for Decoder {
                                 }
                             }
 
-                            let keys: HashMap<&'static str, i64> = if self.version >= 4365481 {
+                            let keys: HashMap<&'static str, i64> = if self
+                                .version
+                                .is_at_least(&crate::version::Version::from_client_exe("0,10,7,0"))
+                            {
                                 // 0.10.7
                                 let mut h = HashMap::new();
                                 h.insert("avatarid", 0x1);

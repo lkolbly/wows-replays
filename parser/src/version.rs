@@ -27,8 +27,16 @@ impl Version {
         format!("{}.{}.{}", self.major, self.minor, self.patch)
     }
 
-    pub fn build(&self) -> u32 {
-        self.build
+    pub fn is_at_least(&self, other: &Version) -> bool {
+        if self.major > other.major {
+            true
+        } else if self.minor > other.minor {
+            true
+        } else if self.patch >= other.patch {
+            true
+        } else {
+            false
+        }
     }
 }
 
