@@ -243,10 +243,10 @@ where
                         0 => false,
                         1 => true,
                         _ => {
-                            panic!(format!(
+                            panic!(
                                 "Got unknown audience {} sender=0x{:x} line={} a={:x} b={:x}",
                                 audience, sender_id, line, a, b
-                            ));
+                            );
                         }
                     };
                     let message = match line {
@@ -266,7 +266,7 @@ where
                         15 => VoiceLine::UsingRadar,
                         16 => VoiceLine::UsingHydroSearch,
                         _ => {
-                            panic!(format!("Unknown voice line {} a={:x} b={:x}!", line, a, b));
+                            panic!("Unknown voice line {} a={:x} b={:x}!", line, a, b);
                         }
                     };
 
@@ -399,7 +399,7 @@ where
                             };
                             let shipid = values.get(keys.get("shipid").unwrap()).unwrap();
                             let playerid = values.get(keys.get("playerid").unwrap()).unwrap();
-                            let playeravatarid =
+                            let _playeravatarid =
                                 values.get(keys.get("playeravatarid").unwrap()).unwrap();
                             let team = values.get(keys.get("team").unwrap()).unwrap();
                             let health = values.get(keys.get("health").unwrap()).unwrap();
@@ -427,7 +427,7 @@ where
                                     serde_pickle::value::Value::I64(i) => *i,
                                     _ => panic!("foo"),
                                 },
-                                health: match team {
+                                health: match health {
                                     serde_pickle::value::Value::I64(i) => *i,
                                     _ => panic!("foo"),
                                 },
@@ -684,13 +684,6 @@ impl Decoder {
             }
         }
     }
-}
-
-fn format_time_with_offset(offset: f32, clock: f32) -> String {
-    let time = clock + offset;
-    let minutes = (time / 60.0).floor() as i32;
-    let seconds = (time - minutes as f32 * 60.0).floor() as i32;
-    format!("{:02}:{:02}", minutes, seconds)
 }
 
 #[bitfield]

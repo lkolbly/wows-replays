@@ -87,7 +87,6 @@ fn printspecs(specs: &Vec<wows_replays::rpc::entitydefs::EntitySpec>) {
 }
 
 enum SurveyResult {
-    Blacklisted,
     /// npackets, ninvalid
     Success((usize, usize)),
     UnsupportedVersion(String),
@@ -95,7 +94,6 @@ enum SurveyResult {
 }
 
 struct SurveyResults {
-    blacklisted: usize,
     version_failures: usize,
     parse_failures: usize,
     successes: usize,
@@ -107,7 +105,6 @@ struct SurveyResults {
 impl SurveyResults {
     fn empty() -> Self {
         Self {
-            blacklisted: 0,
             version_failures: 0,
             parse_failures: 0,
             successes: 0,
@@ -120,9 +117,6 @@ impl SurveyResults {
     fn add(&mut self, result: SurveyResult) {
         self.total += 1;
         match result {
-            SurveyResult::Blacklisted => {
-                self.blacklisted += 1;
-            }
             SurveyResult::Success((_npacks, ninvalid)) => {
                 self.successes += 1;
                 if ninvalid > 0 {
@@ -197,9 +191,7 @@ fn survey_file(skip_decode: bool, replay: std::path::PathBuf) -> SurveyResult {
             }
             SurveyResult::Success((stats.total_packets, stats.invalid_packets))
         }
-        Err(ErrorKind::DatafileNotFound {
-            version: version, ..
-        }) => {
+        Err(ErrorKind::DatafileNotFound { version, .. }) => {
             println!("Unsupported version {}", version.to_path());
             SurveyResult::UnsupportedVersion(version.to_path())
         }

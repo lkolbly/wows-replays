@@ -4,7 +4,6 @@ use nom::number::complete::le_u32;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Read;
-use std::io::Write;
 
 use crate::error::*;
 
@@ -98,14 +97,7 @@ impl ReplayFile {
         let mut contents = vec![];
         f.read_to_end(&mut contents).unwrap();
 
-        //println!("{:x}", contents[0]);
-
         let (remaining, result) = replay_format(&contents)?;
-        //let meta_str = std::str::from_utf8(result.meta).unwrap();
-        //println!("{:?}", meta_str);
-
-        //let mut f = std::fs::File::create("meta.json").unwrap();
-        //f.write_all(serde_json::to_string(&result.meta).unwrap().as_bytes()).unwrap();
 
         // Decrypt
         let key = [
@@ -131,10 +123,6 @@ impl ReplayFile {
             }
         }
 
-        //println!("---------------------------------------------------------------");
-
-        //let mut file = std::fs::File::create("foo.bin.gz").unwrap();
-        //file.write_all(&decrypted).unwrap();
         let mut deflater = flate2::read::ZlibDecoder::new(&decrypted[..]);
         let mut contents = vec![];
         deflater.read_to_end(&mut contents).unwrap();

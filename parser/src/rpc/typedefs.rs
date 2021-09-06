@@ -441,7 +441,7 @@ pub fn parse_type(arg: &roxmltree::Node, aliases: &HashMap<String, ArgType>) -> 
     } else if aliases.contains_key(t) {
         aliases.get(t).unwrap().clone()
     } else {
-        panic!(format!("Unrecognized type {}", t));
+        panic!("Unrecognized type {}", t);
     }
 }
 

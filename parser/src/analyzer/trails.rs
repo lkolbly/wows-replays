@@ -99,7 +99,7 @@ impl Analyzer for TrailRenderer {
             let mut ctx = ChartBuilder::on(&root)
                 .x_label_area_size(0)
                 .y_label_area_size(0)
-                .build_ranged(0.0..1.0, 0.0..1.0)
+                .build_cartesian_2d(0.0..1.0, 0.0..1.0)
                 .unwrap();
 
             let elem: BitMapElement<_> = ((0.0, 1.0), image).into();
@@ -158,7 +158,7 @@ impl Analyzer for TrailRenderer {
         let mut scatter_ctx = ChartBuilder::on(&root)
             .x_label_area_size(0)
             .y_label_area_size(0)
-            .build_ranged(-scale..scale, -scale..scale)
+            .build_cartesian_2d(-scale..scale, -scale..scale)
             .unwrap();
 
         let colors = [BLUE, CYAN, GREEN, MAGENTA, RED, WHITE, YELLOW];

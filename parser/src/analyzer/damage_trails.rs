@@ -9,11 +9,15 @@ use image::{imageops::FilterType, ImageFormat, RgbImage};
 use plotters::prelude::*;
 use std::collections::HashMap;
 
-pub struct DamageTrailsBuilder;
+pub struct DamageTrailsBuilder {
+    output: String,
+}
 
 impl DamageTrailsBuilder {
-    pub fn new() -> Self {
-        Self
+    pub fn new(output: &str) -> Self {
+        Self {
+            output: output.to_string(),
+        }
     }
 }
 
@@ -28,7 +32,7 @@ impl AnalyzerBuilder for DamageTrailsBuilder {
             position: (1e9, 1e9, 1e9),
             trail: vec![],
             meta: Some((*meta).clone()),
-            output: "foo.png".to_string(),
+            output: self.output.clone(),
             damages: vec![],
         })
     }
@@ -119,7 +123,7 @@ impl Analyzer for DamageMonitor {
             let mut ctx = ChartBuilder::on(&root)
                 .x_label_area_size(0)
                 .y_label_area_size(0)
-                .build_ranged(0.0..1.0, 0.0..1.0)
+                .build_cartesian_2d(0.0..1.0, 0.0..1.0)
                 .unwrap();
 
             let elem: BitMapElement<_> = ((0.0, 1.0), image).into();
@@ -182,7 +186,7 @@ impl Analyzer for DamageMonitor {
         let mut scatter_ctx = ChartBuilder::on(&root)
             .x_label_area_size(0)
             .y_label_area_size(0)
-            .build_ranged(-scale..scale, -scale..scale)
+            .build_cartesian_2d(-scale..scale, -scale..scale)
             .unwrap();
 
         // Add the trail for the player
@@ -224,9 +228,7 @@ impl Analyzer for DamageMonitor {
 
         let decoded = DecodedPacket::from(&self.version, packet);
         match &decoded.payload {
-            DecodedPacketPayload::OnArenaStateReceived {
-                players: players, ..
-            } => {
+            DecodedPacketPayload::OnArenaStateReceived { players, .. } => {
                 for player in players.iter() {
                     if player.username == self.username {
                         self.shipid = Some(player.shipid as u32);
