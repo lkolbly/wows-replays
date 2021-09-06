@@ -1,14 +1,15 @@
 use crate::error::ErrorKind;
 use rust_embed::RustEmbed;
+use serde::Serialize;
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Clone, Copy)]
 pub struct Version {
-    major: u32,
-    minor: u32,
-    patch: u32,
-    build: u32,
+    pub major: u32,
+    pub minor: u32,
+    pub patch: u32,
+    pub build: u32,
 }
 
 impl Version {
@@ -23,19 +24,19 @@ impl Version {
         }
     }
 
-    fn to_path(&self) -> String {
+    pub fn to_path(&self) -> String {
         format!("{}.{}.{}", self.major, self.minor, self.patch)
     }
 
     pub fn is_at_least(&self, other: &Version) -> bool {
-        if self.major > other.major {
-            true
-        } else if self.minor > other.minor {
-            true
-        } else if self.patch >= other.patch {
-            true
-        } else {
+        if self.major < other.major {
             false
+        } else if self.minor < other.minor {
+            false
+        } else if self.patch < other.patch {
+            false
+        } else {
+            true
         }
     }
 }
@@ -71,10 +72,10 @@ impl Datafiles {
         if !p.exists() {
             let p = format!("{}/{}", self.version.to_path(), path);
             if let Some(x) = Embedded::get(&p) {
-                return Ok(x);
+                return Ok(x.data);
             }
             return Err(ErrorKind::DatafileNotFound {
-                version: format!("{:?}", self.version),
+                version: self.version,
                 path: path.to_string(),
             });
         }

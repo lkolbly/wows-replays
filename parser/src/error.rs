@@ -49,7 +49,10 @@ pub enum ErrorKind {
         payload: Vec<u8>,
     },
     #[error("Data file not found")]
-    DatafileNotFound { version: String, path: String },
+    DatafileNotFound {
+        version: crate::version::Version,
+        path: String,
+    },
     #[error("Decoder ring failure")]
     DecoderRingFailure(String),
     #[error("Unable to process packet")]
