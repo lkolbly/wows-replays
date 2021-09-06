@@ -105,17 +105,17 @@ pub enum DeathCause {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct OnArenaStateReceivedPlayer {
-    username: String,
-    clan: String,
-    avatarid: i64,
-    shipid: i64,
-    playerid: i64,
+    pub username: String,
+    pub clan: String,
+    pub avatarid: i64,
+    pub shipid: i64,
+    pub playerid: i64,
     //playeravatarid: i64,
-    teamid: i64,
-    health: i64,
+    pub teamid: i64,
+    pub health: i64,
 
     // TODO: Replace String with the actual pickle value (which is cleanly serializable)
-    raw: HashMap<i64, String>,
+    pub raw: HashMap<i64, String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -135,10 +135,13 @@ pub struct MinimapUpdate {
 
     /// Zero is bottom edge, 1.0 is top edge
     y: f32,
+
+    /// This appears to be something related to the big hunt
+    unknown: bool,
 }
 
 #[derive(Debug, Serialize)]
-enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
+pub enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
     Chat {
         entity_id: u32, // TODO: Is entity ID different than sender ID?
         sender_id: i32,
@@ -195,53 +198,18 @@ enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
 }
 
 #[derive(Debug, Serialize)]
-struct DecodedPacket<'replay, 'argtype, 'rawpacket> {
+pub struct DecodedPacket<'replay, 'argtype, 'rawpacket> {
     pub packet_type: u32,
     pub clock: f32,
     pub payload: DecodedPacketPayload<'replay, 'argtype, 'rawpacket>,
 }
 
-struct Decoder {
-    silent: bool,
-    output: Option<Box<dyn std::io::Write>>,
-    version: crate::version::Version,
-}
-
-impl Decoder {
-    fn write(&mut self, line: &str) {
-        if !self.silent {
-            match self.output.as_mut() {
-                Some(f) => {
-                    writeln!(f, "{}", line).unwrap();
-                }
-                None => {
-                    println!("{}", line);
-                }
-            }
-        }
-    }
-}
-
-fn format_time_with_offset(offset: f32, clock: f32) -> String {
-    let time = clock + offset;
-    let minutes = (time / 60.0).floor() as i32;
-    let seconds = (time - minutes as f32 * 60.0).floor() as i32;
-    format!("{:02}:{:02}", minutes, seconds)
-}
-
-#[bitfield]
-struct RawMinimapUpdate {
-    x: B11,
-    y: B11,
-    heading: B8,
-    unknown: bool,
-    is_disappearing: bool,
-}
-
-impl Analyzer for Decoder {
-    fn finish(&self) {}
-
-    fn process(&mut self, packet: &Packet<'_, '_>) {
+impl<'replay, 'argtype, 'rawpacket> DecodedPacket<'replay, 'argtype, 'rawpacket>
+where
+    'rawpacket: 'replay,
+    'rawpacket: 'argtype,
+{
+    pub fn from(version: &crate::version::Version, packet: &'rawpacket Packet<'_, '_>) -> Self {
         let decoded = match &packet.payload {
             PacketType::EntityMethod(EntityMethodPacket {
                 entity_id,
@@ -376,8 +344,7 @@ impl Analyzer for Decoder {
                                 }
                             }
 
-                            let keys: HashMap<&'static str, i64> = if self
-                                .version
+                            let keys: HashMap<&'static str, i64> = if version
                                 .is_at_least(&crate::version::Version::from_client_exe("0,10,7,0"))
                             {
                                 // 0.10.7
@@ -633,7 +600,6 @@ impl Analyzer for Decoder {
                         let x = update.x() as f32 / 512. - 1.5;
                         let y = update.y() as f32 / 512. - 1.5;
 
-                        assert!(update.unknown() == false);
                         updates.push(MinimapUpdate {
                             entity_id: match vehicle_id {
                                 crate::rpc::typedefs::ArgValue::Uint32(u) => *u as i32,
@@ -643,6 +609,7 @@ impl Analyzer for Decoder {
                             y,
                             heading,
                             disappearing: update.is_disappearing(),
+                            unknown: update.unknown(),
                         })
                     }
 
@@ -689,11 +656,57 @@ impl Analyzer for Decoder {
             PacketType::Unknown(u) => DecodedPacketPayload::Unknown(&u),
             PacketType::Invalid(u) => DecodedPacketPayload::Invalid(&u),
         };
-        let decoded = DecodedPacket {
+        let decoded = Self {
             clock: packet.clock,
             packet_type: packet.packet_type,
             payload: decoded,
         };
+        decoded
+    }
+}
+
+struct Decoder {
+    silent: bool,
+    output: Option<Box<dyn std::io::Write>>,
+    version: crate::version::Version,
+}
+
+impl Decoder {
+    fn write(&mut self, line: &str) {
+        if !self.silent {
+            match self.output.as_mut() {
+                Some(f) => {
+                    writeln!(f, "{}", line).unwrap();
+                }
+                None => {
+                    println!("{}", line);
+                }
+            }
+        }
+    }
+}
+
+fn format_time_with_offset(offset: f32, clock: f32) -> String {
+    let time = clock + offset;
+    let minutes = (time / 60.0).floor() as i32;
+    let seconds = (time - minutes as f32 * 60.0).floor() as i32;
+    format!("{:02}:{:02}", minutes, seconds)
+}
+
+#[bitfield]
+struct RawMinimapUpdate {
+    x: B11,
+    y: B11,
+    heading: B8,
+    unknown: bool,
+    is_disappearing: bool,
+}
+
+impl Analyzer for Decoder {
+    fn finish(&self) {}
+
+    fn process(&mut self, packet: &Packet<'_, '_>) {
+        let decoded = DecodedPacket::from(&self.version, packet);
         //println!("{:#?}", decoded);
         //println!("{}", serde_json::to_string_pretty(&decoded).unwrap());
         let encoded = serde_json::to_string(&decoded).unwrap();
