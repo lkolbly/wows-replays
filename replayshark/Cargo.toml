@@ -11,6 +11,7 @@ build = "build.rs"
 wows-replays = { version = "0.1.0", path = "../parser" }
 clap = "2.33.1"
 walkdir = "2.3.2"
+chrono = "0.4.19"
 
 [build-dependencies]
 built = { version = "0.5.1", features = [ "git2", "chrono" ] }

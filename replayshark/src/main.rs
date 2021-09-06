@@ -15,6 +15,9 @@ fn parse_replay<P: wows_replays::analyzer::AnalyzerBuilder>(
 ) -> Result<(), wows_replays::ErrorKind> {
     let replay_file = ReplayFile::from_file(replay)?;
 
+    //let mut file = std::fs::File::create("foo.bin").unwrap();
+    //file.write_all(&replay_file.packet_data).unwrap();
+
     let datafiles = wows_replays::version::Datafiles::new(
         std::path::PathBuf::from("versions"),
         wows_replays::version::Version::from_client_exe(&replay_file.meta.clientVersionFromExe),
@@ -172,22 +175,6 @@ impl SurveyResults {
 
 fn survey_file(skip_decode: bool, replay: std::path::PathBuf) -> SurveyResult {
     let filename = replay.file_name().unwrap().to_str().unwrap();
-    let blacklist = [
-        // This one fails to parse the initial bit
-        "8654fea76d1a758ea40d",
-        // Ship ID was not a U32
-        "a71c42aabe17848bf618",
-        "cb5b3f96018265ef8dbb",
-        // Failure to parse minimap info
-        "94fedfc13adc497440dc",
-    ];
-    let is_blacklisted = blacklist
-        .iter()
-        .map(|prefix| filename.contains(prefix))
-        .fold(false, |a, b| a | b);
-    if is_blacklisted {
-        return SurveyResult::Blacklisted;
-    }
 
     print!("Parsing {}: ", truncate_string(filename, 20));
     std::io::stdout().flush().unwrap();
@@ -209,6 +196,12 @@ fn survey_file(skip_decode: bool, replay: std::path::PathBuf) -> SurveyResult {
                 println!("OK ({} packets)", stats.total_packets);
             }
             SurveyResult::Success((stats.total_packets, stats.invalid_packets))
+        }
+        Err(ErrorKind::DatafileNotFound {
+            version: version, ..
+        }) => {
+            println!("Unsupported version {}", version.to_path());
+            SurveyResult::UnsupportedVersion(version.to_path())
         }
         Err(ErrorKind::UnsupportedReplayVersion(n)) => {
             println!("Unsupported version {}", n);
@@ -294,27 +287,20 @@ fn main() {
                         .required(true),
                 ),
         )
+        .subcommand(
+            SubCommand::with_name("search")
+                .about("Search a directory full of replays")
+                .arg(
+                    Arg::with_name("REPLAYS")
+                        .help("The replay files to use")
+                        .required(true)
+                        .multiple(true),
+                ),
+        )
         .get_matches();
 
     if let Some(matches) = matches.subcommand_matches("dump") {
         let input = matches.value_of("REPLAY").unwrap();
-        /*let mut dump = PacketDump {
-            time_offset: 2431.0,
-        };
-        parse_replay(&std::path::PathBuf::from(input), dump).unwrap();*/
-        /*let mut dump = DamageMonitor {
-            avatarid: 511279, //avatarid: 576297,
-            shipid: 511280,   //shipid: 576298,
-            time_offset: 5824.0,
-            artillery_shots: HashMap::new(),
-            position: (1e9, 1e9, 1e9),
-            trail: vec![],
-            meta: None,
-            output: "foo.png".to_string(),
-            damages: vec![],
-        };*/
-        //let dump = wows_replays::analyzer::packet_dump::PacketDumpBuilder::new(2431.0);
-        //let mut dump = wows_replays::analyzer::damage_trails::DamageTrailsBuilder::new();
         let dump = wows_replays::analyzer::decoder::DecoderBuilder::new(
             false,
             matches.is_present("no-meta"),
@@ -361,5 +347,59 @@ fn main() {
             }
         }
         survey_result.print();
+    }
+    if let Some(matches) = matches.subcommand_matches("search") {
+        let mut replays = vec![];
+        for replay in matches.values_of("REPLAYS").unwrap() {
+            for entry in walkdir::WalkDir::new(replay) {
+                let entry = entry.expect("Error unwrapping entry");
+                if !entry.path().is_file() {
+                    continue;
+                }
+                let replay = entry.path().to_path_buf();
+                let replay_path = replay.clone();
+
+                let replay = match ReplayFile::from_file(&replay) {
+                    Ok(replay) => replay,
+                    Err(_) => {
+                        continue;
+                    }
+                };
+                replays.push((replay_path, replay.meta));
+
+                if replays.len() % 100 == 0 {
+                    println!("Parsed {} games...", replays.len());
+                }
+
+                //let result = survey_file(matches.is_present("skip-decode"), replay);
+                //survey_result.add(result);
+            }
+        }
+        replays.sort_by_key(|replay| {
+            match chrono::NaiveDateTime::parse_from_str(&replay.1.dateTime, "%d.%m.%Y %H:%M:%S") {
+                Ok(x) => x,
+                Err(e) => {
+                    println!("Couldn't parse '{}' because {:?}", replay.1.dateTime, e);
+                    chrono::NaiveDateTime::parse_from_str(
+                        "05.05.1995 01:02:03",
+                        "%d.%m.%Y %H:%M:%S",
+                    )
+                    .unwrap()
+                }
+            }
+            //replay.1.dateTime.clone()
+        });
+        println!("Found {} games", replays.len());
+        for i in 0..10 {
+            let idx = replays.len() - i - 1;
+            println!(
+                "{:?} {} {} {} {}",
+                replays[idx].0,
+                replays[idx].1.playerName,
+                replays[idx].1.dateTime,
+                replays[idx].1.mapDisplayName,
+                replays[idx].1.playerVehicle
+            );
+        }
     }
 }

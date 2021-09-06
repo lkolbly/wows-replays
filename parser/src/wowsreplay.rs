@@ -4,6 +4,7 @@ use nom::number::complete::le_u32;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Read;
+use std::io::Write;
 
 use crate::error::*;
 
@@ -12,7 +13,7 @@ use crate::error::*;
 pub struct VehicleInfoMeta {
     pub shipId: u64,
     pub relation: u32,
-    pub id: u64, // Account ID?
+    pub id: i64, // Account ID?
     pub name: String,
 }
 
@@ -132,6 +133,8 @@ impl ReplayFile {
 
         //println!("---------------------------------------------------------------");
 
+        //let mut file = std::fs::File::create("foo.bin.gz").unwrap();
+        //file.write_all(&decrypted).unwrap();
         let mut deflater = flate2::read::ZlibDecoder::new(&decrypted[..]);
         let mut contents = vec![];
         deflater.read_to_end(&mut contents).unwrap();
