@@ -1,5 +1,7 @@
+use crate::analyzer::decoder::{DecodedPacket, DecodedPacketPayload};
 use crate::analyzer::*;
 use crate::packet2::{EntityMethodPacket, Packet, PacketType};
+use crate::version::Version;
 use crate::ReplayMeta;
 use image::GenericImageView;
 use image::Pixel;
@@ -18,9 +20,10 @@ impl DamageTrailsBuilder {
 impl AnalyzerBuilder for DamageTrailsBuilder {
     fn build(&self, meta: &ReplayMeta) -> Box<dyn Analyzer> {
         Box::new(DamageMonitor {
-            avatarid: 511279, //avatarid: 576297,
-            shipid: 511280,   //shipid: 576298,
-            time_offset: 5824.0,
+            version: Version::from_client_exe(&meta.clientVersionFromExe),
+            username: meta.playerName.clone(),
+            avatarid: None,
+            shipid: None,
             artillery_shots: HashMap::new(),
             position: (1e9, 1e9, 1e9),
             trail: vec![],
@@ -44,9 +47,10 @@ struct DamageVector {
 }
 
 struct DamageMonitor {
-    avatarid: u32,
-    shipid: u32,
-    time_offset: f32,
+    version: Version,
+    username: String,
+    avatarid: Option<u32>,
+    shipid: Option<u32>,
     artillery_shots: HashMap<i32, Vec<ArtilleryShot>>,
     position: (f32, f32, f32),
     trail: Vec<(f32, f32)>,
@@ -213,20 +217,36 @@ impl Analyzer for DamageMonitor {
     }
 
     fn process(&mut self, packet: &Packet<'_, '_>) {
-        let time = packet.clock + self.time_offset;
+        let time = packet.clock;
         let minutes = (time / 60.0).floor() as i32;
         let seconds = (time - minutes as f32 * 60.0).floor() as i32;
         let time = format!("{:02}:{:02}", minutes, seconds);
 
+        let decoded = DecodedPacket::from(&self.version, packet);
+        match &decoded.payload {
+            DecodedPacketPayload::OnArenaStateReceived {
+                players: players, ..
+            } => {
+                for player in players.iter() {
+                    if player.username == self.username {
+                        self.shipid = Some(player.shipid as u32);
+                        self.avatarid = Some(player.avatarid as u32);
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+
         match &packet.payload {
             PacketType::Position(pos) => {
-                if pos.pid == self.shipid {
+                if pos.pid == self.shipid.unwrap_or(0) {
                     self.position = (pos.x, pos.y, pos.z);
                     self.trail.push((pos.x, pos.z));
                 }
             }
             PacketType::PlayerOrientation(pos) => {
-                if pos.pid == self.shipid {
+                if pos.pid == self.shipid.unwrap_or(0) {
                     self.position = (pos.x, pos.y, pos.z);
                     self.trail.push((pos.x, pos.z));
                 }
@@ -255,7 +275,7 @@ impl Analyzer for DamageMonitor {
                     );
                 } else if *method == "receiveDamagesOnShip" {
                     println!("{}: receiveDamagesOnShip({}, {:?})", time, entity_id, args);
-                    if *entity_id != self.shipid {
+                    if *entity_id != self.shipid.unwrap_or(0) {
                         return;
                     }
                     match &args[0] {
