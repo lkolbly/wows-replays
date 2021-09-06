@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+    "idxpkg",
     "parser",
     "replayshark",
 ]
