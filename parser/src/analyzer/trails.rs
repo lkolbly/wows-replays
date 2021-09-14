@@ -44,10 +44,10 @@ impl Analyzer for TrailRenderer {
                 if !self.trails.contains_key(&pos.pid) {
                     self.trails.insert(pos.pid, vec![]);
                 }
-                self.trails.get_mut(&pos.pid).unwrap().push((pos.x, pos.z));
+                self.trails.get_mut(&pos.pid).unwrap().push((pos.position.x, pos.position.z));
             }
             PacketType::PlayerOrientation(pos) => {
-                self.player_trail.push((pos.x, pos.z));
+                self.player_trail.push((pos.position.x, pos.position.z));
             }
             _ => {}
         }
