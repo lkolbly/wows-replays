@@ -1,4 +1,4 @@
-use clap::{App, Arg, SubCommand};
+use clap::{App, Arg, ArgGroup, SubCommand};
 use memmap::MmapOptions;
 use nom::{
     bytes::complete::{tag, take, take_till},
@@ -322,16 +322,42 @@ fn main() {
         .author("Lane Kolbly <lane@rscheme.org>")
         .about("Parses & processes World of Warships game data")
         .arg(
+            Arg::with_name("WOWSPATH")
+                .long("--wows-path")
+                .help("Path to the World of Warships install path")
+                .conflicts_with("IDXPATH")
+                .conflicts_with("PKGPATH")
+                .takes_value(true)
+                .required(true),
+        )
+        .arg(
+            Arg::with_name("BINVERSION")
+                .long("--bin-version")
+                .help(
+                    "Specify the bin/ version number. If not specified is generated automatically.",
+                )
+                .takes_value(true)
+                .requires("WOWSPATH"),
+        )
+        .arg(
             Arg::with_name("IDXPATH")
+                .long("--idx-path")
                 .help("Path to the .idx files")
-                .required(true)
-                .index(1),
+                .requires("PKGPATH")
+                .takes_value(true),
         )
         .arg(
             Arg::with_name("PKGPATH")
+                .long("--pkg-path")
                 .help("Path to the .pkg files")
-                .required(true)
-                .index(2),
+                .requires("IDXPATH")
+                .takes_value(true),
+        )
+        .group(
+            ArgGroup::with_name("RAWPATH")
+                .arg("IDXPATH")
+                .arg("PKGPATH")
+                .multiple(true),
         )
         .subcommand(
             SubCommand::with_name("list")
@@ -361,9 +387,33 @@ fn main() {
         )
         .get_matches();
 
-    let idx_prefix = matches.value_of("IDXPATH").unwrap();
-    let pkg_prefix = matches.value_of("PKGPATH").unwrap();
-    let mgr = IdxPkgManager::new(idx_prefix, pkg_prefix);
+    let mgr = if let Some(wows_prefix) = matches.value_of("WOWSPATH") {
+        let bin_version = if let Some(bin_version) = matches.value_of("BINVERSION") {
+            bin_version.to_owned()
+        } else {
+            let bin_path = format!("{}/bin/", wows_prefix);
+            let mut versions = vec![];
+            for path in std::fs::read_dir(&bin_path).unwrap() {
+                versions.push(
+                    path.unwrap()
+                        .file_name()
+                        .to_str()
+                        .unwrap()
+                        .parse::<u32>()
+                        .unwrap(),
+                );
+            }
+            versions.sort();
+            format!("{}", versions[versions.len() - 1])
+        };
+        let idx_prefix = format!("{}/bin/{}/idx/", wows_prefix, bin_version);
+        let pkg_prefix = format!("{}/res_packages/", wows_prefix);
+        IdxPkgManager::new(&idx_prefix, &pkg_prefix)
+    } else {
+        let idx_prefix = matches.value_of("IDXPATH").unwrap();
+        let pkg_prefix = matches.value_of("PKGPATH").unwrap();
+        IdxPkgManager::new(idx_prefix, pkg_prefix)
+    };
 
     if let Some(matches) = matches.subcommand_matches("list") {
         for record in mgr.iter() {
