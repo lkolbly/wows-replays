@@ -122,10 +122,13 @@ impl Analyzer for Summary {
                         *self.ribbons.get_mut(&ribbon).unwrap() += 1;
                     }
                 } else if *method == "receiveDamageStat" {
-                    let value = serde_pickle::de::value_from_slice(match &args[0] {
-                        crate::rpc::typedefs::ArgValue::Blob(x) => x,
-                        _ => panic!("foo"),
-                    })
+                    let value = serde_pickle::de::value_from_slice(
+                        match &args[0] {
+                            crate::rpc::typedefs::ArgValue::Blob(x) => x,
+                            _ => panic!("foo"),
+                        },
+                        serde_pickle::de::DeOptions::new(),
+                    )
                     .unwrap();
 
                     match value {

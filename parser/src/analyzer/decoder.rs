@@ -278,10 +278,13 @@ where
                 } else if *method == "onArenaStateReceived" {
                     let (arg0, arg1) = unpack_rpc_args!(args, i64, i8);
 
-                    let value = serde_pickle::de::value_from_slice(match &args[2] {
-                        crate::rpc::typedefs::ArgValue::Blob(x) => x,
-                        _ => panic!("foo"),
-                    })
+                    let value = serde_pickle::de::value_from_slice(
+                        match &args[2] {
+                            crate::rpc::typedefs::ArgValue::Blob(x) => x,
+                            _ => panic!("foo"),
+                        },
+                        serde_pickle::de::DeOptions::new(),
+                    )
                     .unwrap();
 
                     let value = match value {
@@ -322,10 +325,13 @@ where
                         arg2.insert(k, v);
                     }
 
-                    let value = serde_pickle::de::value_from_slice(match &args[3] {
-                        crate::rpc::typedefs::ArgValue::Blob(x) => x,
-                        _ => panic!("foo"),
-                    })
+                    let value = serde_pickle::de::value_from_slice(
+                        match &args[3] {
+                            crate::rpc::typedefs::ArgValue::Blob(x) => x,
+                            _ => panic!("foo"),
+                        },
+                        serde_pickle::de::DeOptions::new(),
+                    )
                     .unwrap();
 
                     let mut players_out = vec![];
@@ -442,10 +448,13 @@ where
                         players: players_out,
                     }
                 } else if *method == "receiveDamageStat" {
-                    let value = serde_pickle::de::value_from_slice(match &args[0] {
-                        crate::rpc::typedefs::ArgValue::Blob(x) => x,
-                        _ => panic!("foo"),
-                    })
+                    let value = serde_pickle::de::value_from_slice(
+                        match &args[0] {
+                            crate::rpc::typedefs::ArgValue::Blob(x) => x,
+                            _ => panic!("foo"),
+                        },
+                        serde_pickle::de::DeOptions::new(),
+                    )
                     .unwrap();
 
                     let mut stats = vec![];
