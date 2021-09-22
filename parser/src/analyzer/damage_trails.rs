@@ -259,17 +259,23 @@ impl Analyzer for DamageMonitor {
                 args,
             }) => {
                 if *method == "receiveDamageStat" {
-                    let value = serde_pickle::de::value_from_slice(match &args[0] {
-                        crate::rpc::typedefs::ArgValue::Blob(x) => x,
-                        _ => panic!("foo"),
-                    })
+                    let value = serde_pickle::de::value_from_slice(
+                        match &args[0] {
+                            crate::rpc::typedefs::ArgValue::Blob(x) => x,
+                            _ => panic!("foo"),
+                        },
+                        serde_pickle::de::DeOptions::new(),
+                    )
                     .unwrap();
                     println!("{}: receiveDamageStat({}: {:#?})", time, entity_id, value);
                 } else if *method == "receiveDamageReport" {
-                    let value = serde_pickle::de::value_from_slice(match &args[0] {
-                        crate::rpc::typedefs::ArgValue::Blob(x) => x,
-                        _ => panic!("foo"),
-                    })
+                    let value = serde_pickle::de::value_from_slice(
+                        match &args[0] {
+                            crate::rpc::typedefs::ArgValue::Blob(x) => x,
+                            _ => panic!("foo"),
+                        },
+                        serde_pickle::de::DeOptions::new(),
+                    )
                     .unwrap();
                     println!(
                         "{}: receiveDamageReport({}: {:#?}, {:?}, {:?})",
