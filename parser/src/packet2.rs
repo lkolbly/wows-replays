@@ -1,8 +1,8 @@
 use nom::{
-    bytes::complete::take, number::complete::be_u32, number::complete::be_u8,
-    number::complete::le_f32, number::complete::le_u16, number::complete::le_u32,
-    number::complete::le_u8,
+    bytes::complete::take, number::complete::le_f32, number::complete::le_u16,
+    number::complete::le_u32, number::complete::le_u8
 };
+
 use serde_derive::Serialize;
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -12,18 +12,46 @@ use crate::rpc::entitydefs::*;
 use crate::rpc::typedefs::ArgValue;
 
 #[derive(Debug, Serialize, Clone)]
-pub struct PositionPacket {
-    pub pid: u32,
+pub struct Vec3 {
     pub x: f32,
     pub y: f32,
     pub z: f32,
-    pub rot_x: u32,
-    pub rot_y: u32,
-    pub rot_z: u32,
-    pub a: f32, // These three appear to be velocity in x,y,z (perhaps local? Forward/back velocity and side-to-side drift?)
-    pub b: f32,
-    pub c: f32,
-    pub extra: u8,
+}
+
+impl Vec3 {
+    pub fn parse(i: &[u8]) -> IResult<&[u8], Self>
+    {
+        let (i, x) = le_f32(i)?;
+        let (i, y) = le_f32(i)?;
+        let (i, z) = le_f32(i)?;
+        Ok((i, Vec3 {x, y, z}))
+    }
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct Rot3 {
+    pub yaw: f32,
+    pub pitch: f32,
+    pub roll: f32,
+}
+
+impl Rot3 {
+    pub fn parse(i: &[u8]) -> IResult<&[u8], Self>
+    {
+        let (i, yaw) = le_f32(i)?;
+        let (i, pitch) = le_f32(i)?;
+        let (i, roll) = le_f32(i)?;
+        Ok((i, Rot3 {yaw, pitch, roll}))
+    }
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct PositionPacket {
+    pub pid: u32,
+    pub position: Vec3,
+    pub position_error: Vec3,
+    pub rotation: Rot3,
+    pub is_error: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -52,15 +80,11 @@ pub struct EntityMethodPacket<'argtype> {
 pub struct EntityCreatePacket<'argtype> {
     pub entity_id: u32,
     pub entity_type: &'argtype str,
-    pub vehicle_id: u32,
     pub space_id: u32,
-    pub position_x: f32,
-    pub position_y: f32,
-    pub position_z: f32,
-    pub dir_x: f32,
-    pub dir_y: f32,
-    pub dir_z: f32,
-    pub unknown: u32,
+    pub vehicle_id: u32,
+    pub position: Vec3,
+    pub rotation: Rot3,
+    pub state_length: u32,
     pub props: HashMap<&'argtype str, crate::rpc::typedefs::ArgValue<'argtype>>,
 }
 
@@ -72,19 +96,8 @@ pub struct EntityCreatePacket<'argtype> {
 pub struct PlayerOrientationPacket {
     pub pid: u32,
     pub parent_id: u32,
-    pub x: f32,
-
-    /// I'm not 100% sure about this field
-    pub y: f32,
-
-    pub z: f32,
-
-    /// Radians, 0 is North and positive numbers are clockwise
-    /// e.g. pi/2 is due East, -pi/2 is due West, and +/-pi is due South.
-    pub heading: f32,
-
-    pub f4: f32,
-    pub f5: f32,
+    pub position: Vec3,
+    pub rotation: Rot3,
 }
 
 #[derive(Debug, Serialize)]
@@ -101,20 +114,13 @@ pub struct BasePlayerCreatePacket<'replay, 'argtype> {
 }
 
 #[derive(Debug, Serialize)]
-pub struct Vector3 {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-}
-
-#[derive(Debug, Serialize)]
 pub struct CellPlayerCreatePacket<'replay> {
     pub entity_id: u32,
     pub space_id: u32,
     pub unknown: u16,
     pub vehicle_id: u32,
-    pub position: Vector3,
-    pub direction: Vector3,
+    pub position: Vec3,
+    pub rotation: Rot3,
     pub value: &'replay [u8],
 }
 
@@ -319,30 +325,19 @@ impl<'argtype> Parser<'argtype> {
         if zero != 0 {
             panic!("What does this field mean?");
         }
-        let (i, x) = le_f32(i)?;
-        let (i, y) = le_f32(i)?;
-        let (i, z) = le_f32(i)?;
-        let (i, rot_x) = be_u32(i)?;
-        let (i, rot_y) = be_u32(i)?;
-        let (i, rot_z) = be_u32(i)?;
-        let (i, a) = le_f32(i)?;
-        let (i, b) = le_f32(i)?;
-        let (i, c) = le_f32(i)?;
-        let (i, extra) = be_u8(i)?;
+        let (i, position) = Vec3::parse(i)?;
+        let (i, position_error) = Vec3::parse(i)?;
+        let (i, rotation) = Rot3::parse(i)?;
+        let (i, is_error_byte) = le_u8(i)?;
+        let is_error = is_error_byte != 0;
         Ok((
             i,
             PacketType::Position(PositionPacket {
                 pid,
-                x,
-                y,
-                z,
-                rot_x,
-                rot_y,
-                rot_z,
-                a,
-                b,
-                c,
-                extra,
+                position,
+                position_error,
+                rotation,
+                is_error,
             }),
         ))
     }
@@ -354,23 +349,15 @@ impl<'argtype> Parser<'argtype> {
         assert!(i.len() == 0x20);
         let (i, pid) = le_u32(i)?;
         let (i, parent_id) = le_u32(i)?;
-        let (i, x) = le_f32(i)?;
-        let (i, y) = le_f32(i)?;
-        let (i, z) = le_f32(i)?;
-        let (i, heading) = le_f32(i)?;
-        let (i, f4) = le_f32(i)?;
-        let (i, f5) = le_f32(i)?;
+        let (i, position) = Vec3::parse(i)?;
+        let (i, rotation) = Rot3::parse(i)?;
         Ok((
             i,
             PacketType::PlayerOrientation(PlayerOrientationPacket {
                 pid,
                 parent_id,
-                x,
-                y,
-                z,
-                heading,
-                f4,
-                f5,
+                position,
+                rotation,
             }),
         ))
     }
@@ -418,13 +405,9 @@ impl<'argtype> Parser<'argtype> {
         let (i, entity_type) = le_u16(i)?;
         let (i, vehicle_id) = le_u32(i)?;
         let (i, space_id) = le_u32(i)?;
-        let (i, posx) = le_f32(i)?;
-        let (i, posy) = le_f32(i)?;
-        let (i, posz) = le_f32(i)?;
-        let (i, dirx) = le_f32(i)?;
-        let (i, diry) = le_f32(i)?;
-        let (i, dirz) = le_f32(i)?;
-        let (i, unknown) = le_u32(i)?;
+        let (i, position) = Vec3::parse(i)?;
+        let (i, rotation) = Rot3::parse(i)?;
+        let (i, state_length) = le_u32(i)?;
         let (_, state) = take(i.len())(i)?;
         if self.entities.contains_key(&entity_id) {
             //println!("DBG: Entity {} got created twice!", entity_id);
@@ -467,15 +450,11 @@ impl<'argtype> Parser<'argtype> {
             PacketType::EntityCreate(EntityCreatePacket {
                 entity_id,
                 entity_type: &self.specs[entity_type as usize - 1].name,
-                vehicle_id,
                 space_id,
-                position_x: posx,
-                position_y: posy,
-                position_z: posz,
-                dir_x: dirx,
-                dir_y: diry,
-                dir_z: dirz,
-                unknown,
+                vehicle_id,
+                position,
+                rotation,
+                state_length,
                 props,
             }),
         ))
@@ -489,12 +468,8 @@ impl<'argtype> Parser<'argtype> {
         let (i, space_id) = le_u32(i)?;
         //let (i, unknown) = le_u16(i)?;
         let (i, vehicle_id) = le_u32(i)?;
-        let (i, posx) = le_f32(i)?;
-        let (i, posy) = le_f32(i)?;
-        let (i, posz) = le_f32(i)?;
-        let (i, dirx) = le_f32(i)?;
-        let (i, diry) = le_f32(i)?;
-        let (i, dirz) = le_f32(i)?;
+        let (i, position) = Vec3::parse(i)?;
+        let (i, rotation) = Rot3::parse(i)?;
         let (i, vlen) = le_u32(i)?;
         let (i, value) = take(vlen)(i)?;
 
@@ -541,16 +516,8 @@ impl<'argtype> Parser<'argtype> {
                 entity_id,
                 vehicle_id,
                 space_id,
-                position: Vector3 {
-                    x: posx,
-                    y: posy,
-                    z: posz,
-                },
-                direction: Vector3 {
-                    x: dirx,
-                    y: diry,
-                    z: dirz,
-                },
+                position,
+                rotation,
                 unknown: 5,
                 value,
             }),

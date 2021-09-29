@@ -243,14 +243,14 @@ impl Analyzer for DamageMonitor {
         match &packet.payload {
             PacketType::Position(pos) => {
                 if pos.pid == self.shipid.unwrap_or(0) {
-                    self.position = (pos.x, pos.y, pos.z);
-                    self.trail.push((pos.x, pos.z));
+                    self.position = (pos.position.x, pos.position.y, pos.position.z);
+                    self.trail.push((pos.position.x, pos.position.z));
                 }
             }
             PacketType::PlayerOrientation(pos) => {
                 if pos.pid == self.shipid.unwrap_or(0) {
-                    self.position = (pos.x, pos.y, pos.z);
-                    self.trail.push((pos.x, pos.z));
+                    self.position = (pos.position.x, pos.position.y, pos.position.z);
+                    self.trail.push((pos.position.x, pos.position.z));
                 }
             }
             PacketType::EntityMethod(EntityMethodPacket {
