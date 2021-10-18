@@ -351,6 +351,20 @@ where
                             }
 
                             let keys: HashMap<&'static str, i64> = if version
+                                .is_at_least(&crate::version::Version::from_client_exe("0,10,9,0"))
+                            {
+                                // 0.10.9 inserted things at 0x1 and 0x1F
+                                let mut h = HashMap::new();
+                                h.insert("avatarid", 0x2);
+                                h.insert("clan", 0x6);
+                                h.insert("health", 0x17);
+                                h.insert("username", 0x18);
+                                h.insert("shipid", 0x20);
+                                h.insert("playerid", 0x21);
+                                h.insert("playeravatarid", 0x22);
+                                h.insert("team", 0x23);
+                                h
+                            } else if version
                                 .is_at_least(&crate::version::Version::from_client_exe("0,10,7,0"))
                             {
                                 // 0.10.7
