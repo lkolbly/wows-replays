@@ -9,6 +9,141 @@ mod built_info {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
 
+struct InvestigativePrinter {
+    filter_packet: Option<u32>,
+    filter_method: Option<String>,
+    timestamp: Option<f32>,
+    entity_id: Option<u32>,
+    meta: bool,
+    version: wows_replays::version::Version,
+}
+
+impl wows_replays::analyzer::Analyzer for InvestigativePrinter {
+    fn finish(&self) {}
+
+    fn process(&mut self, packet: &wows_replays::packet2::Packet<'_, '_>) {
+        let decoded = wows_replays::analyzer::decoder::DecodedPacket::from(&self.version, packet);
+
+        if self.meta {
+            match &decoded.payload {
+                wows_replays::analyzer::decoder::DecodedPacketPayload::OnArenaStateReceived {
+                    players,
+                    ..
+                } => {
+                    for player in players.iter() {
+                        println!(
+                            "{} {}/{} ({:x?}/{:x?})",
+                            player.username,
+                            player.shipid,
+                            player.avatarid,
+                            (player.shipid as u32).to_le_bytes(),
+                            (player.avatarid as u32).to_le_bytes()
+                        );
+                    }
+                }
+                _ => {
+                    // Nop
+                }
+            }
+        }
+
+        if let Some(n) = self.filter_packet {
+            if n != decoded.packet_type {
+                return;
+            }
+        }
+        if let Some(s) = self.filter_method.as_ref() {
+            match &packet.payload {
+                wows_replays::packet2::PacketType::EntityMethod(method) => {
+                    if method.method != s {
+                        return;
+                    }
+                    if let Some(eid) = self.entity_id {
+                        if method.entity_id != eid {
+                            return;
+                        }
+                    }
+                }
+                _ => {
+                    return;
+                }
+            }
+        }
+        if let Some(t) = self.timestamp {
+            let clock = (decoded.clock + t) as u32;
+            let s = clock % 60;
+            let clock = (clock - s) / 60;
+            let m = clock % 60;
+            let clock = (clock - m) / 60;
+            let h = clock;
+            let encoded = if self.filter_method.is_some() {
+                match &packet.payload {
+                    wows_replays::packet2::PacketType::EntityMethod(method) => {
+                        serde_json::to_string(&method).unwrap()
+                    }
+                    _ => panic!(),
+                }
+            } else if self.filter_packet.is_some() {
+                match &packet.payload {
+                    wows_replays::packet2::PacketType::Unknown(x) => {
+                        let v: Vec<_> = x.iter().map(|n| format!("{:02x}", n)).collect();
+                        format!("0x[{}]", v.join(","))
+                    }
+                    _ => serde_json::to_string(&packet).unwrap(),
+                }
+            } else {
+                serde_json::to_string(&decoded).unwrap()
+            };
+            println!("{:02}:{:02}:{:02}: {}", h, m, s, encoded);
+        } else {
+            let encoded = serde_json::to_string(&decoded).unwrap();
+            println!("{}", &encoded);
+        }
+    }
+}
+
+pub struct InvestigativeBuilder {
+    no_meta: bool,
+    filter_packet: Option<String>,
+    filter_method: Option<String>,
+    timestamp: Option<String>,
+    entity_id: Option<String>,
+}
+
+impl wows_replays::analyzer::AnalyzerBuilder for InvestigativeBuilder {
+    fn build(&self, meta: &wows_replays::ReplayMeta) -> Box<dyn wows_replays::analyzer::Analyzer> {
+        let version = wows_replays::version::Version::from_client_exe(&meta.clientVersionFromExe);
+        let mut decoder = InvestigativePrinter {
+            version: version,
+            filter_packet: self
+                .filter_packet
+                .as_ref()
+                .map(|s| parse_int::parse::<u32>(s).unwrap()),
+            filter_method: self.filter_method.clone(),
+            timestamp: self.timestamp.as_ref().map(|s| {
+                let parts: Vec<_> = s.split(":").collect();
+                if parts.len() == 3 {
+                    let h = parts[0].parse::<u32>().unwrap();
+                    let m = parts[1].parse::<u32>().unwrap();
+                    let s = parts[2].parse::<u32>().unwrap();
+                    (h * 3600 + m * 60 + s) as f32
+                } else {
+                    panic!("Expected hh:mm:ss as timestamp");
+                }
+            }),
+            entity_id: self
+                .entity_id
+                .as_ref()
+                .map(|s| parse_int::parse(s).unwrap()),
+            meta: !self.no_meta,
+        };
+        if !self.no_meta {
+            println!("{}", &serde_json::to_string(&meta).unwrap());
+        }
+        Box::new(decoder)
+    }
+}
+
 fn parse_replay<P: wows_replays::analyzer::AnalyzerBuilder>(
     replay: &std::path::PathBuf,
     processor: P,
@@ -289,6 +424,40 @@ fn main() {
                         .multiple(true),
                 ),
         )
+        .subcommand(
+            SubCommand::with_name("investigate")
+                .about("Tools designed for reverse-engineering packets")
+                .arg(
+                    Arg::with_name("meta")
+                        .long("meta")
+                        .help("Don't output the metadata as first line"),
+                )
+                .arg(
+                    Arg::with_name("timestamp")
+                        .long("timestamp")
+                        .takes_value(true)
+                        .help("hh:mm:ss offset to render clock values with"),
+                )
+                .arg(
+                    Arg::with_name("filter-packet")
+                        .long("filter-packet")
+                        .takes_value(true)
+                        .help("If specified, only return packets of the given packet_type"),
+                )
+                .arg(
+                    Arg::with_name("filter-method")
+                        .long("filter-method")
+                        .takes_value(true)
+                        .help("If specified, only return method calls for the given method"),
+                )
+                .arg(
+                    Arg::with_name("entity-id")
+                        .long("entity-id")
+                        .takes_value(true)
+                        .help("Entity ID to apply to other filters if applicable"),
+                )
+                .arg(replay_arg.clone()),
+        )
         .get_matches();
 
     if let Some(matches) = matches.subcommand_matches("dump") {
@@ -298,6 +467,17 @@ fn main() {
             matches.is_present("no-meta"),
             matches.value_of("output"),
         );
+        parse_replay(&std::path::PathBuf::from(input), dump).unwrap();
+    }
+    if let Some(matches) = matches.subcommand_matches("investigate") {
+        let input = matches.value_of("REPLAY").unwrap();
+        let dump = InvestigativeBuilder {
+            no_meta: !matches.is_present("meta"),
+            filter_packet: matches.value_of("filter-packet").map(|s| s.to_string()),
+            filter_method: matches.value_of("filter-method").map(|s| s.to_string()),
+            entity_id: matches.value_of("entity-id").map(|s| s.to_string()),
+            timestamp: matches.value_of("timestamp").map(|s| s.to_string()),
+        };
         parse_replay(&std::path::PathBuf::from(input), dump).unwrap();
     }
     if let Some(matches) = matches.subcommand_matches("spec") {
