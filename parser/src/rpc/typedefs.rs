@@ -488,6 +488,8 @@ into_unwrappable_type!(i8, ArgValue::Int8);
 into_unwrappable_type!(i16, ArgValue::Int16);
 into_unwrappable_type!(i32, ArgValue::Int32);
 into_unwrappable_type!(i64, ArgValue::Int64);
+into_unwrappable_type!(f32, ArgValue::Float32);
+into_unwrappable_type!(f64, ArgValue::Float64);
 
 /*impl<'a> std::convert::TryInto<u8> for &ArgValue<'a> {
     type Error = ();

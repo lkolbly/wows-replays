@@ -31,7 +31,7 @@ impl Analyzer for ChatLogger {
     fn finish(&self) {}
 
     fn process(&mut self, packet: &Packet<'_, '_>) {
-        let decoded = DecodedPacket::from(&self.version, packet);
+        let decoded = DecodedPacket::from(&self.version, false, packet);
         match decoded.payload {
             DecodedPacketPayload::Chat {
                 entity_id,

@@ -191,6 +191,7 @@ pub enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
     },
     Unknown(&'replay [u8]),
     Invalid(&'rawpacket crate::packet2::InvalidPacket<'replay>),
+    Audit(String),
     /*
     ArtilleryHit(ArtilleryHitPacket<'a>),
     Type24(Type24Packet),
@@ -209,7 +210,11 @@ where
     'rawpacket: 'replay,
     'rawpacket: 'argtype,
 {
-    pub fn from(version: &crate::version::Version, packet: &'rawpacket Packet<'_, '_>) -> Self {
+    pub fn from(
+        version: &crate::version::Version,
+        audit: bool,
+        packet: &'rawpacket Packet<'_, '_>,
+    ) -> Self {
         let decoded = match &packet.payload {
             PacketType::EntityMethod(EntityMethodPacket {
                 entity_id,
@@ -722,7 +727,7 @@ impl Analyzer for Decoder {
     fn finish(&self) {}
 
     fn process(&mut self, packet: &Packet<'_, '_>) {
-        let decoded = DecodedPacket::from(&self.version, packet);
+        let decoded = DecodedPacket::from(&self.version, false, packet);
         //println!("{:#?}", decoded);
         //println!("{}", serde_json::to_string_pretty(&decoded).unwrap());
         let encoded = serde_json::to_string(&decoded).unwrap();

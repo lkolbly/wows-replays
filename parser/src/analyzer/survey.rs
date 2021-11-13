@@ -6,6 +6,7 @@ use std::rc::Rc;
 pub struct SurveyStats {
     pub total_packets: usize,
     pub invalid_packets: usize,
+    pub audits: Vec<String>,
 }
 
 impl SurveyStats {
@@ -13,6 +14,7 @@ impl SurveyStats {
         Self {
             total_packets: 0,
             invalid_packets: 0,
+            audits: vec![],
         }
     }
 }
@@ -33,10 +35,12 @@ impl SurveyBuilder {
 
 impl AnalyzerBuilder for SurveyBuilder {
     fn build(&self, meta: &crate::ReplayMeta) -> Box<dyn Analyzer> {
+        let version = crate::version::Version::from_client_exe(&meta.clientVersionFromExe);
         Box::new(Survey {
             skip_decoder: self.skip_decoder,
             decoder: decoder::DecoderBuilder::new(true, true, None).build(meta),
             stats: self.stats.clone(),
+            version: version,
         })
     }
 }
@@ -45,6 +49,7 @@ struct Survey {
     skip_decoder: bool,
     decoder: Box<dyn Analyzer>,
     stats: Rc<RefCell<SurveyStats>>,
+    version: crate::version::Version,
 }
 
 impl Analyzer for Survey {
@@ -54,11 +59,18 @@ impl Analyzer for Survey {
 
     fn process(&mut self, packet: &Packet<'_, '_>) {
         // Do stuff and such
+        let mut stats: RefMut<_> = self.stats.borrow_mut();
         if !self.skip_decoder {
-            self.decoder.process(packet);
+            //let decoded = self.decoder.process(packet);
+            let decoded = decoder::DecodedPacket::from(&self.version, true, packet);
+            match &decoded.payload {
+                crate::analyzer::decoder::DecodedPacketPayload::Audit(s) => {
+                    stats.audits.push(s.to_string());
+                }
+                _ => {}
+            }
         }
 
-        let mut stats: RefMut<_> = self.stats.borrow_mut();
         match &packet.payload {
             crate::packet2::PacketType::Invalid(_) => {
                 stats.invalid_packets += 1;

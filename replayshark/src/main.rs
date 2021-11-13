@@ -22,7 +22,8 @@ impl wows_replays::analyzer::Analyzer for InvestigativePrinter {
     fn finish(&self) {}
 
     fn process(&mut self, packet: &wows_replays::packet2::Packet<'_, '_>) {
-        let decoded = wows_replays::analyzer::decoder::DecodedPacket::from(&self.version, packet);
+        let decoded =
+            wows_replays::analyzer::decoder::DecodedPacket::from(&self.version, true, packet);
 
         if self.meta {
             match &decoded.payload {
@@ -223,7 +224,7 @@ fn printspecs(specs: &Vec<wows_replays::rpc::entitydefs::EntitySpec>) {
 
 enum SurveyResult {
     /// npackets, ninvalid
-    Success((usize, usize)),
+    Success((String, usize, usize, Vec<String>)),
     UnsupportedVersion(String),
     ParseFailure(String),
 }
@@ -235,6 +236,7 @@ struct SurveyResults {
     successes_with_invalids: usize,
     total: usize,
     invalid_versions: HashMap<String, usize>,
+    audits: HashMap<String, Vec<String>>,
 }
 
 impl SurveyResults {
@@ -246,16 +248,20 @@ impl SurveyResults {
             successes_with_invalids: 0,
             total: 0,
             invalid_versions: HashMap::new(),
+            audits: HashMap::new(),
         }
     }
 
     fn add(&mut self, result: SurveyResult) {
         self.total += 1;
         match result {
-            SurveyResult::Success((_npacks, ninvalid)) => {
+            SurveyResult::Success((hash, _npacks, ninvalid, audits)) => {
                 self.successes += 1;
                 if ninvalid > 0 {
                     self.successes_with_invalids += 1;
+                }
+                if audits.len() > 0 {
+                    self.audits.insert(hash, audits);
                 }
             }
             SurveyResult::UnsupportedVersion(version) => {
@@ -272,6 +278,19 @@ impl SurveyResults {
     }
 
     fn print(&self) {
+        for (k, v) in self.audits.iter() {
+            println!();
+            println!("{} has {} audits:", k, v.len());
+            let mut cnt = 0;
+            for audit in v.iter() {
+                if cnt >= 10 {
+                    println!("...truncating");
+                    break;
+                }
+                println!(" - {}", audit);
+                cnt += 1;
+            }
+        }
         println!();
         println!("Found {} replay files", self.total);
         println!(
@@ -304,8 +323,9 @@ impl SurveyResults {
 
 fn survey_file(skip_decode: bool, replay: std::path::PathBuf) -> SurveyResult {
     let filename = replay.file_name().unwrap().to_str().unwrap();
+    let filename = filename.to_string();
 
-    print!("Parsing {}: ", truncate_string(filename, 20));
+    print!("Parsing {}: ", truncate_string(&filename, 20));
     std::io::stdout().flush().unwrap();
 
     let survey_stats = std::rc::Rc::new(std::cell::RefCell::new(
@@ -324,7 +344,12 @@ fn survey_file(skip_decode: bool, replay: std::path::PathBuf) -> SurveyResult {
             } else {
                 println!("OK ({} packets)", stats.total_packets);
             }
-            SurveyResult::Success((stats.total_packets, stats.invalid_packets))
+            SurveyResult::Success((
+                filename.to_string(),
+                stats.total_packets,
+                stats.invalid_packets,
+                stats.audits.clone(),
+            ))
         }
         Err(ErrorKind::DatafileNotFound { version, .. }) => {
             println!("Unsupported version {}", version.to_path());
