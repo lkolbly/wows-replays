@@ -122,14 +122,16 @@ impl wows_replays::analyzer::AnalyzerBuilder for InvestigativeBuilder {
                 .map(|s| parse_int::parse::<u32>(s).unwrap()),
             filter_method: self.filter_method.clone(),
             timestamp: self.timestamp.as_ref().map(|s| {
-                let parts: Vec<_> = s.split(":").collect();
+                let ts_parts: Vec<_> = s.split("+").collect();
+                let offset = ts_parts[1].parse::<u32>().unwrap();
+                let parts: Vec<_> = ts_parts[0].split(":").collect();
                 if parts.len() == 3 {
                     let h = parts[0].parse::<u32>().unwrap();
                     let m = parts[1].parse::<u32>().unwrap();
                     let s = parts[2].parse::<u32>().unwrap();
-                    (h * 3600 + m * 60 + s) as f32
+                    (h * 3600 + m * 60 + s) as f32 - offset as f32
                 } else {
-                    panic!("Expected hh:mm:ss as timestamp");
+                    panic!("Expected hh:mm:ss+offset as timestamp");
                 }
             }),
             entity_id: self
