@@ -1,6 +1,6 @@
 use nom::{
     bytes::complete::take, number::complete::le_f32, number::complete::le_u16,
-    number::complete::le_u32, number::complete::le_u8
+    number::complete::le_u32, number::complete::le_u8,
 };
 
 use serde_derive::Serialize;
@@ -19,12 +19,11 @@ pub struct Vec3 {
 }
 
 impl Vec3 {
-    pub fn parse(i: &[u8]) -> IResult<&[u8], Self>
-    {
+    pub fn parse(i: &[u8]) -> IResult<&[u8], Self> {
         let (i, x) = le_f32(i)?;
         let (i, y) = le_f32(i)?;
         let (i, z) = le_f32(i)?;
-        Ok((i, Vec3 {x, y, z}))
+        Ok((i, Vec3 { x, y, z }))
     }
 }
 
@@ -36,12 +35,11 @@ pub struct Rot3 {
 }
 
 impl Rot3 {
-    pub fn parse(i: &[u8]) -> IResult<&[u8], Self>
-    {
+    pub fn parse(i: &[u8]) -> IResult<&[u8], Self> {
         let (i, yaw) = le_f32(i)?;
         let (i, pitch) = le_f32(i)?;
         let (i, roll) = le_f32(i)?;
-        Ok((i, Rot3 {yaw, pitch, roll}))
+        Ok((i, Rot3 { yaw, pitch, roll }))
     }
 }
 
@@ -155,6 +153,7 @@ pub enum PacketType<'replay, 'argtype> {
     EntityMethod(EntityMethodPacket<'argtype>),
     PropertyUpdate(PropertyUpdatePacket<'argtype>),
     PlayerOrientation(PlayerOrientationPacket),
+    Version(String),
     Unknown(&'replay [u8]),
 
     /// These are packets which we thought we understood, but couldn't parse
@@ -313,6 +312,18 @@ impl<'argtype> Parser<'argtype> {
                 update_cmd,
                 property: &spec.properties[prop_idx as usize].name,
             }),
+        ))
+    }
+
+    fn parse_version_packet<'replay, 'b>(
+        &'b self,
+        i: &'replay [u8],
+    ) -> IResult<&'replay [u8], PacketType<'replay, 'argtype>> {
+        let (i, len) = le_u32(i)?;
+        let (i, data) = take(len)(i)?;
+        Ok((
+            i,
+            PacketType::Version(std::str::from_utf8(data).unwrap().to_string()),
         ))
     }
 
@@ -577,6 +588,7 @@ impl<'argtype> Parser<'argtype> {
             0x7 => self.parse_entity_property_packet(i)?,
             0x8 => self.parse_entity_method_packet(i)?,
             0xA => self.parse_position_packet(i)?,
+            0x16 => self.parse_version_packet(i)?,
             0x22 => self.parse_nested_property_update(i)?,
             /*0x24 => {
                 parse_type_24_packet(i)?

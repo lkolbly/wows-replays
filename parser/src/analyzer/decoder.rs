@@ -213,6 +213,7 @@ pub enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
         consumable: Consumable,
         duration: f32,
     },
+    Version(String),
     Unknown(&'replay [u8]),
     Invalid(&'rawpacket crate::packet2::InvalidPacket<'replay>),
     Audit(String),
@@ -742,6 +743,7 @@ where
             PacketType::EntityLeave(e) => DecodedPacketPayload::EntityLeave(e),
             PacketType::EntityCreate(e) => DecodedPacketPayload::EntityCreate(e),
             PacketType::PropertyUpdate(update) => DecodedPacketPayload::PropertyUpdate(update),
+            PacketType::Version(version) => DecodedPacketPayload::Version(version.clone()),
             PacketType::Unknown(u) => DecodedPacketPayload::Unknown(&u),
             PacketType::Invalid(u) => DecodedPacketPayload::Invalid(&u),
         };
