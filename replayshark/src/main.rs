@@ -226,7 +226,7 @@ fn printspecs(specs: &Vec<wows_replays::rpc::entitydefs::EntitySpec>) {
 
 enum SurveyResult {
     /// npackets, ninvalid
-    Success((String, usize, usize, Vec<String>)),
+    Success((String, String, usize, usize, Vec<String>)),
     UnsupportedVersion(String),
     ParseFailure(String),
 }
@@ -238,7 +238,7 @@ struct SurveyResults {
     successes_with_invalids: usize,
     total: usize,
     invalid_versions: HashMap<String, usize>,
-    audits: HashMap<String, Vec<String>>,
+    audits: HashMap<String, (String, Vec<String>)>,
 }
 
 impl SurveyResults {
@@ -257,13 +257,13 @@ impl SurveyResults {
     fn add(&mut self, result: SurveyResult) {
         self.total += 1;
         match result {
-            SurveyResult::Success((hash, _npacks, ninvalid, audits)) => {
+            SurveyResult::Success((hash, datetime, _npacks, ninvalid, audits)) => {
                 self.successes += 1;
                 if ninvalid > 0 {
                     self.successes_with_invalids += 1;
                 }
                 if audits.len() > 0 {
-                    self.audits.insert(hash, audits);
+                    self.audits.insert(hash, (datetime, audits));
                 }
             }
             SurveyResult::UnsupportedVersion(version) => {
@@ -280,9 +280,18 @@ impl SurveyResults {
     }
 
     fn print(&self) {
-        for (k, v) in self.audits.iter() {
+        let mut audits: Vec<_> = self.audits.iter().collect();
+        audits.sort_by_key(|(_, (tm, _))| {
+            chrono::NaiveDateTime::parse_from_str(tm, "%d.%m.%Y %H:%M:%S").unwrap()
+        });
+        for (k, (tm, v)) in audits.iter() {
             println!();
-            println!("{} has {} audits:", k, v.len());
+            println!(
+                "{} ({}) has {} audits:",
+                truncate_string(k, 20),
+                tm,
+                v.len()
+            );
             let mut cnt = 0;
             for audit in v.iter() {
                 if cnt >= 10 {
@@ -348,6 +357,7 @@ fn survey_file(skip_decode: bool, replay: std::path::PathBuf) -> SurveyResult {
             }
             SurveyResult::Success((
                 filename.to_string(),
+                stats.date_time.clone(),
                 stats.total_packets,
                 stats.invalid_packets,
                 stats.audits.clone(),

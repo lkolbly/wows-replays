@@ -7,6 +7,7 @@ pub struct SurveyStats {
     pub total_packets: usize,
     pub invalid_packets: usize,
     pub audits: Vec<String>,
+    pub date_time: String,
 }
 
 impl SurveyStats {
@@ -15,6 +16,7 @@ impl SurveyStats {
             total_packets: 0,
             invalid_packets: 0,
             audits: vec![],
+            date_time: "".to_string(),
         }
     }
 }
@@ -36,6 +38,10 @@ impl SurveyBuilder {
 impl AnalyzerBuilder for SurveyBuilder {
     fn build(&self, meta: &crate::ReplayMeta) -> Box<dyn Analyzer> {
         let version = crate::version::Version::from_client_exe(&meta.clientVersionFromExe);
+        {
+            let mut stats: RefMut<_> = self.stats.borrow_mut();
+            stats.date_time = meta.dateTime.clone();
+        }
         Box::new(Survey {
             skip_decoder: self.skip_decoder,
             decoder: decoder::DecoderBuilder::new(true, true, None).build(meta),
