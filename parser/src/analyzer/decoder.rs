@@ -140,6 +140,25 @@ pub struct MinimapUpdate {
     unknown: bool,
 }
 
+#[derive(Debug, Clone, Copy, Serialize)]
+pub enum Consumable {
+    DamageControl,
+    SpottingAircraft,
+    DefensiveAntiAircraft,
+    SpeedBoost,
+    RepairParty,
+    CatapultFighter,
+    MainBatteryReloadBooster,
+    TorpedoReloadBooster,
+    Smoke,
+    Radar,
+    HydroacousticSearch,
+    Hydrophone,
+    EnhancedRudders,
+    ReserveBattery,
+    Unknown(i8),
+}
+
 #[derive(Debug, Serialize)]
 pub enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
     Chat {
@@ -188,6 +207,11 @@ pub enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
     BattleEnd {
         winning_team: i8,
         unknown: u8,
+    },
+    Consumable {
+        entity: u32,
+        consumable: Consumable,
+        duration: f32,
     },
     Unknown(&'replay [u8]),
     Invalid(&'rawpacket crate::packet2::InvalidPacket<'replay>),
@@ -662,6 +686,43 @@ where
                     DecodedPacketPayload::BattleEnd {
                         winning_team,
                         unknown,
+                    }
+                } else if *method == "consumableUsed" {
+                    let (consumable, duration) = unpack_rpc_args!(args, i8, f32);
+                    let raw_consumable = consumable;
+                    let consumable = match consumable {
+                        0 => Some(Consumable::DamageControl),
+                        1 => Some(Consumable::SpottingAircraft),
+                        2 => Some(Consumable::DefensiveAntiAircraft),
+                        3 => Some(Consumable::SpeedBoost),
+                        5 => Some(Consumable::MainBatteryReloadBooster),
+                        7 => Some(Consumable::Smoke),
+                        9 => Some(Consumable::RepairParty),
+                        10 => Some(Consumable::CatapultFighter),
+                        11 => Some(Consumable::HydroacousticSearch),
+                        12 => Some(Consumable::TorpedoReloadBooster),
+                        13 => Some(Consumable::Radar),
+                        35 => Some(Consumable::Hydrophone),
+                        36 => Some(Consumable::EnhancedRudders),
+                        37 => Some(Consumable::ReserveBattery),
+                        _ => {
+                            if audit {
+                                None
+                            } else {
+                                Some(Consumable::Unknown(consumable))
+                            }
+                        }
+                    };
+                    match consumable {
+                        Some(x) => DecodedPacketPayload::Consumable {
+                            entity: *entity_id,
+                            consumable: x,
+                            duration: duration,
+                        },
+                        None => DecodedPacketPayload::Audit(format!(
+                            "consumableUsed({},{},{})",
+                            entity_id, raw_consumable, duration
+                        )),
                     }
                 } else {
                     DecodedPacketPayload::EntityMethod(match &packet.payload {
