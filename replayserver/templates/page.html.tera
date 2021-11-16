@@ -1,0 +1,23 @@
+<html>
+
+<body>
+    <table>
+        {% for game in games %}
+        <tr>
+            <td>{{game.date}}</td>
+            <td>{{game.username}}</td>
+            <td>{{game.ship}}</td>
+            <td>{{game.map}}</td>
+            <td>{{game.version.major}}.{{game.version.minor}}.{{game.version.patch}}</td>
+            <td>{{game.num_packets}} {% if game.victory %}{{game.victory}}{%else%}Unknown victory
+                {{game.victory}}{%endif%}</td>
+            <td><a href="{{root}}download/{{game.hash}}">Download</a></td>
+            <td><a href="{{root}}decoded/{{game.hash}}">Decoded</a></td>
+            <td><a href="{{root}}trails/{{game.hash}}">Trails</a></td>
+            <td><a href="{{root}}damage_trails/{{game.hash}}">Damage Trails</a></td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+
+</html>
