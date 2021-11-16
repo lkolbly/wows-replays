@@ -92,11 +92,11 @@ Some packets will appear as "Invalid" packets, these are packets for which the p
 Supported Versions
 ==================
 
-Versions 0.9.10 through 0.10.7 have currently been tested.
+Versions 0.9.10 through 0.10.10 have currently been tested.
 
 The version policy for this component is forward-looking: After game version X is released, I won't work very hard to decode new packets from version X-1 and below. To the extent practical, though, support for older versions will be maintained - but it is not guaranteed that any version other than the "current" will work.
 
-The distributed executable contains files extracted from the game, but you can provide your own data files by placing the in the `versions/<version>/` folder in your working directory - for example, `versions/0.10.4/scripts/` should contain the `scripts/` folder unpacked using the [WOWS Unpack Tool](https://forum.worldofwarships.eu/topic/113847-all-wows-unpack-tool-unpack-game-client-resources/).
+The distributed executable contains files extracted from the game, but you can provide your own data files by placing them in the `versions/<version>/` folder in your working directory - for example, `versions/0.10.4/scripts/` should contain the `scripts/` folder unpacked using the [WOWS Unpack Tool](https://forum.worldofwarships.eu/topic/113847-all-wows-unpack-tool-unpack-game-client-resources/).
 
 Acknowledgements
 ================
