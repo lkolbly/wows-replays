@@ -154,6 +154,8 @@ pub enum PacketType<'replay, 'argtype> {
     PropertyUpdate(PropertyUpdatePacket<'argtype>),
     PlayerOrientation(PlayerOrientationPacket),
     Version(String),
+    CameraMode(u32),
+    CameraFreeLook(u8),
     Unknown(&'replay [u8]),
 
     /// These are packets which we thought we understood, but couldn't parse
@@ -325,6 +327,22 @@ impl<'argtype> Parser<'argtype> {
             i,
             PacketType::Version(std::str::from_utf8(data).unwrap().to_string()),
         ))
+    }
+
+    fn parse_camera_mode_packet<'replay, 'b>(
+        &'b self,
+        i: &'replay [u8],
+    ) -> IResult<&'replay [u8], PacketType<'replay, 'argtype>> {
+        let (i, mode) = le_u32(i)?;
+        Ok((i, PacketType::CameraMode(mode)))
+    }
+
+    fn parse_camera_freelook_packet<'replay, 'b>(
+        &'b self,
+        i: &'replay [u8],
+    ) -> IResult<&'replay [u8], PacketType<'replay, 'argtype>> {
+        let (i, freelook) = le_u8(i)?;
+        Ok((i, PacketType::CameraFreeLook(freelook)))
     }
 
     fn parse_position_packet<'a, 'b>(
@@ -590,10 +608,12 @@ impl<'argtype> Parser<'argtype> {
             0xA => self.parse_position_packet(i)?,
             0x16 => self.parse_version_packet(i)?,
             0x22 => self.parse_nested_property_update(i)?,
+            0x26 => self.parse_camera_mode_packet(i)?,
             /*0x24 => {
                 parse_type_24_packet(i)?
             }*/
             0x2b => self.parse_player_orientation_packet(i)?,
+            0x2e => self.parse_camera_freelook_packet(i)?,
             _ => self.parse_unknown_packet(i, i.len().try_into().unwrap())?,
         };
         Ok((i, payload))

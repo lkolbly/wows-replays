@@ -114,7 +114,7 @@ pub struct InvestigativeBuilder {
 impl wows_replays::analyzer::AnalyzerBuilder for InvestigativeBuilder {
     fn build(&self, meta: &wows_replays::ReplayMeta) -> Box<dyn wows_replays::analyzer::Analyzer> {
         let version = wows_replays::version::Version::from_client_exe(&meta.clientVersionFromExe);
-        let mut decoder = InvestigativePrinter {
+        let decoder = InvestigativePrinter {
             version: version,
             filter_packet: self
                 .filter_packet

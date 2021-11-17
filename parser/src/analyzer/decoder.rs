@@ -159,6 +159,17 @@ pub enum Consumable {
     Unknown(i8),
 }
 
+#[derive(Debug, Clone, Copy, Serialize)]
+pub enum CameraMode {
+    OverheadMap,
+    FollowingShells,
+    FollowingPlanes,
+    FollowingShip,
+    FollowingSubmarine,
+    FreeFlying,
+    Unknown(u32),
+}
+
 #[derive(Debug, Serialize)]
 pub enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
     Chat {
@@ -214,6 +225,8 @@ pub enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
         duration: f32,
     },
     Version(String),
+    CameraMode(CameraMode),
+    CameraFreeLook(bool),
     Unknown(&'replay [u8]),
     Invalid(&'rawpacket crate::packet2::InvalidPacket<'replay>),
     Audit(String),
@@ -732,6 +745,32 @@ where
                     })
                 }
             }
+            PacketType::CameraMode(mode) => match mode {
+                3 => DecodedPacketPayload::CameraMode(CameraMode::OverheadMap),
+                5 => DecodedPacketPayload::CameraMode(CameraMode::FollowingShells),
+                6 => DecodedPacketPayload::CameraMode(CameraMode::FollowingPlanes),
+                8 => DecodedPacketPayload::CameraMode(CameraMode::FollowingShip),
+                9 => DecodedPacketPayload::CameraMode(CameraMode::FreeFlying),
+                11 => DecodedPacketPayload::CameraMode(CameraMode::FollowingSubmarine),
+                _ => {
+                    if audit {
+                        DecodedPacketPayload::Audit(format!("CameraMode({})", mode))
+                    } else {
+                        DecodedPacketPayload::CameraMode(CameraMode::Unknown(*mode))
+                    }
+                }
+            },
+            PacketType::CameraFreeLook(freelook) => match freelook {
+                0 => DecodedPacketPayload::CameraFreeLook(false),
+                1 => DecodedPacketPayload::CameraFreeLook(true),
+                _ => {
+                    if audit {
+                        DecodedPacketPayload::Audit(format!("CameraFreeLook({})", freelook))
+                    } else {
+                        DecodedPacketPayload::CameraFreeLook(true)
+                    }
+                }
+            },
             PacketType::EntityProperty(p) => DecodedPacketPayload::EntityProperty(p),
             PacketType::Position(pos) => DecodedPacketPayload::Position((*pos).clone()),
             PacketType::PlayerOrientation(pos) => {

@@ -1,6 +1,6 @@
 use crate::analyzer::decoder::{DecodedPacket, DecodedPacketPayload};
 use crate::analyzer::{Analyzer, AnalyzerBuilder};
-use crate::packet2::{EntityMethodPacket, Packet, PacketType};
+use crate::packet2::Packet;
 use std::collections::HashMap;
 use std::convert::TryInto;
 
@@ -34,10 +34,10 @@ impl Analyzer for ChatLogger {
         let decoded = DecodedPacket::from(&self.version, false, packet);
         match decoded.payload {
             DecodedPacketPayload::Chat {
-                entity_id,
                 sender_id,
                 audience,
                 message,
+                ..
             } => {
                 println!(
                     "{}: {}: {} {}",
@@ -48,9 +48,7 @@ impl Analyzer for ChatLogger {
                 );
             }
             DecodedPacketPayload::VoiceLine {
-                sender_id,
-                is_global,
-                message,
+                sender_id, message, ..
             } => {
                 println!(
                     "{}: {}: voiceline {:#?}",

@@ -1,11 +1,11 @@
 use clap::{App, Arg};
 use rocket::State;
 use rust_embed::RustEmbed;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Mutex;
 use tera::{Context, Tera};
 use wows_replays::analyzer::decoder::DecodedPacketPayload;
@@ -142,7 +142,7 @@ fn file_watcher(path: String, file_sink: Sender<std::path::PathBuf>) {
             let hash = format!("{}", entry.path().display());
             if seen.insert(hash.clone()) {
                 TOTAL_FILES.fetch_add(1, Ordering::SeqCst);
-                file_sink.send(entry.into_path());
+                file_sink.send(entry.into_path()).unwrap();
             }
         }
         std::thread::sleep(std::time::Duration::from_secs(20));
@@ -193,7 +193,8 @@ fn page(pageid: u32, config: &State<ServerConfig>) -> rocket::response::content:
     let mut tera = Tera::default();
     for fname in Templates::iter() {
         let content = Templates::get(&fname).unwrap();
-        tera.add_raw_template(&fname, std::str::from_utf8(&content.data).unwrap());
+        tera.add_raw_template(&fname, std::str::from_utf8(&content.data).unwrap())
+            .unwrap();
     }
 
     let mut context = Context::new();
@@ -263,7 +264,7 @@ fn damage_trails(replay: ReplayInfo) -> (rocket::http::ContentType, Vec<u8>) {
         assert!(version_parts.len() == 4);
 
         let processor = wows_replays::analyzer::damage_trails::DamageTrailsBuilder::new("foo.png");
-        let mut processor = processor.build(&replay_file.meta);
+        let processor = processor.build(&replay_file.meta);
 
         // Parse packets
         let mut p = wows_replays::packet2::Parser::new(&specs);
@@ -298,7 +299,7 @@ fn trails(replay: ReplayInfo) -> (rocket::http::ContentType, Vec<u8>) {
         assert!(version_parts.len() == 4);
 
         let processor = wows_replays::analyzer::trails::TrailsBuilder::new("/tmp/tmp.png");
-        let mut processor = processor.build(&replay_file.meta);
+        let processor = processor.build(&replay_file.meta);
 
         // Parse packets
         let mut p = wows_replays::packet2::Parser::new(&specs);
