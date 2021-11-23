@@ -36,10 +36,10 @@ pub struct Rot3 {
 
 impl Rot3 {
     pub fn parse(i: &[u8]) -> IResult<&[u8], Self> {
-        let (i, yaw) = le_f32(i)?;
-        let (i, pitch) = le_f32(i)?;
         let (i, roll) = le_f32(i)?;
-        Ok((i, Rot3 { yaw, pitch, roll }))
+        let (i, pitch) = le_f32(i)?;
+        let (i, yaw) = le_f32(i)?;
+        Ok((i, Rot3 { roll, pitch, yaw }))
     }
 }
 
