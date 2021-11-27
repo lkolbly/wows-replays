@@ -1,6 +1,7 @@
 use nom::{
-    bytes::complete::take, number::complete::le_f32, number::complete::le_u16,
-    number::complete::le_u32, number::complete::le_u8,
+    bytes::complete::take, number::complete::le_f32, number::complete::le_i32,
+    number::complete::le_i64, number::complete::le_u16, number::complete::le_u32,
+    number::complete::le_u8,
 };
 
 use serde_derive::Serialize;
@@ -142,6 +143,36 @@ pub struct PropertyUpdatePacket<'argtype> {
 }
 
 #[derive(Debug, Serialize)]
+pub struct CameraPacket {
+    pub unknown: Vec3,
+    pub unknown2: u32,
+    pub absolute_position: Vec3,
+    pub fov: f32,
+    pub position: Vec3,
+    pub rotation: Rot3,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CruiseState {
+    pub key: u32,
+    pub value: i32,
+}
+
+#[derive(Debug, Serialize)]
+pub struct MapPacket<'replay> {
+    pub space_id: u32,
+    pub arena_id: i64,
+    pub unknown1: u32,
+    pub unknown2: u32,
+    pub blob: &'replay [u8],
+    pub map_name: &'replay str,
+    /// Note: We suspect that this matrix is always the unit matrix, hence
+    /// we don't spend the computation to parse it.
+    pub matrix: &'replay [u8],
+    pub unknown: u8, // bool?
+}
+
+#[derive(Debug, Serialize)]
 pub enum PacketType<'replay, 'argtype> {
     Position(PositionPacket),
     BasePlayerCreate(BasePlayerCreatePacket<'replay, 'argtype>),
@@ -153,9 +184,12 @@ pub enum PacketType<'replay, 'argtype> {
     EntityMethod(EntityMethodPacket<'argtype>),
     PropertyUpdate(PropertyUpdatePacket<'argtype>),
     PlayerOrientation(PlayerOrientationPacket),
+    CruiseState(CruiseState),
     Version(String),
+    Camera(CameraPacket),
     CameraMode(u32),
     CameraFreeLook(u8),
+    Map(MapPacket<'replay>),
     Unknown(&'replay [u8]),
 
     /// These are packets which we thought we understood, but couldn't parse
@@ -391,6 +425,26 @@ impl<'argtype> Parser<'argtype> {
         ))
     }
 
+    fn parse_camera_packet<'a, 'b>(&'b self, i: &'a [u8]) -> IResult<&'a [u8], PacketType<'a, 'b>> {
+        let (i, unknown) = Vec3::parse(i)?;
+        let (i, unknown2) = le_u32(i)?;
+        let (i, absolute_position) = Vec3::parse(i)?;
+        let (i, fov) = le_f32(i)?;
+        let (i, position) = Vec3::parse(i)?;
+        let (i, rotation) = Rot3::parse(i)?;
+        Ok((
+            i,
+            PacketType::Camera(CameraPacket {
+                unknown,
+                unknown2,
+                absolute_position,
+                fov,
+                position,
+                rotation,
+            }),
+        ))
+    }
+
     fn parse_unknown_packet<'a, 'b>(
         &'b self,
         i: &'a [u8],
@@ -575,6 +629,42 @@ impl<'argtype> Parser<'argtype> {
         ))
     }
 
+    fn parse_cruise_state<'a, 'b>(
+        &'b mut self,
+        i: &'a [u8],
+    ) -> IResult<&'a [u8], PacketType<'a, 'b>> {
+        let (i, key) = le_u32(i)?;
+        let (i, value) = le_i32(i)?;
+        Ok((i, PacketType::CruiseState(CruiseState { key, value })))
+    }
+
+    fn parse_map_packet<'a, 'b>(
+        &'b mut self,
+        i: &'a [u8],
+    ) -> IResult<&'a [u8], PacketType<'a, 'b>> {
+        let (i, space_id) = le_u32(i)?;
+        let (i, arena_id) = le_i64(i)?;
+        let (i, unknown1) = le_u32(i)?;
+        let (i, unknown2) = le_u32(i)?;
+        let (i, blob) = take(128usize)(i)?;
+        let (i, string_size) = le_u32(i)?;
+        let (i, map_name) = take(string_size)(i)?;
+        let (i, matrix) = take(4usize * 4 * 4)(i)?;
+        let (i, unknown) = le_u8(i)?;
+        let packet = MapPacket {
+            space_id,
+            arena_id,
+            unknown1,
+            unknown2,
+            blob,
+            // TODO: Use a nom combinator for this (for error handling)
+            map_name: std::str::from_utf8(map_name).unwrap(),
+            matrix,
+            unknown,
+        };
+        Ok((i, PacketType::Map(packet)))
+    }
+
     fn parse_naked_packet<'a, 'b>(
         &'b mut self,
         packet_type: u32,
@@ -608,12 +698,12 @@ impl<'argtype> Parser<'argtype> {
             0xA => self.parse_position_packet(i)?,
             0x16 => self.parse_version_packet(i)?,
             0x22 => self.parse_nested_property_update(i)?,
+            0x24 => self.parse_camera_packet(i)?, // Note: We suspect that 0x18 is this also
             0x26 => self.parse_camera_mode_packet(i)?,
-            /*0x24 => {
-                parse_type_24_packet(i)?
-            }*/
+            0x27 => self.parse_map_packet(i)?,
             0x2b => self.parse_player_orientation_packet(i)?,
             0x2e => self.parse_camera_freelook_packet(i)?,
+            0x31 => self.parse_cruise_state(i)?,
             _ => self.parse_unknown_packet(i, i.len().try_into().unwrap())?,
         };
         Ok((i, payload))

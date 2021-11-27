@@ -170,6 +170,14 @@ pub enum CameraMode {
     Unknown(u32),
 }
 
+#[derive(Debug, Clone, Copy, Serialize)]
+pub enum CruiseState {
+    Throttle,
+    Rudder,
+    DiveDepth,
+    Unknown(u32),
+}
+
 #[derive(Debug, Serialize)]
 pub enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
     Chat {
@@ -224,7 +232,14 @@ pub enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
         consumable: Consumable,
         duration: f32,
     },
+    CruiseState {
+        state: CruiseState,
+        // See https://github.com/lkolbly/wows-replays/issues/14#issuecomment-976784004 for values
+        value: i32,
+    },
+    Map(&'rawpacket crate::packet2::MapPacket<'replay>),
     Version(String),
+    Camera(&'rawpacket crate::packet2::CameraPacket),
     CameraMode(CameraMode),
     CameraFreeLook(bool),
     Unknown(&'replay [u8]),
@@ -745,6 +760,7 @@ where
                     })
                 }
             }
+            PacketType::Camera(camera) => DecodedPacketPayload::Camera(camera),
             PacketType::CameraMode(mode) => match mode {
                 3 => DecodedPacketPayload::CameraMode(CameraMode::OverheadMap),
                 5 => DecodedPacketPayload::CameraMode(CameraMode::FollowingShells),
@@ -771,6 +787,55 @@ where
                     }
                 }
             },
+            PacketType::CruiseState(cs) => match cs.key {
+                0 => DecodedPacketPayload::CruiseState {
+                    state: CruiseState::Throttle,
+                    value: cs.value,
+                },
+                1 => DecodedPacketPayload::CruiseState {
+                    state: CruiseState::Rudder,
+                    value: cs.value,
+                },
+                2 => DecodedPacketPayload::CruiseState {
+                    state: CruiseState::DiveDepth,
+                    value: cs.value,
+                },
+                _ => {
+                    if audit {
+                        DecodedPacketPayload::Audit(format!(
+                            "CruiseState(unknown={}, {})",
+                            cs.key, cs.value
+                        ))
+                    } else {
+                        DecodedPacketPayload::CruiseState {
+                            state: CruiseState::Unknown(cs.key),
+                            value: cs.value,
+                        }
+                    }
+                }
+            },
+            PacketType::Map(map) => {
+                if audit && map.unknown != 0 && map.unknown != 1 {
+                    DecodedPacketPayload::Audit(format!(
+                        "Map: Unknown bool is not a bool (is {})",
+                        map.unknown
+                    ))
+                } else if audit
+                    && map.matrix
+                        != [
+                            0, 0, 128, 63, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            128, 63, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 63,
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 63,
+                        ]
+                {
+                    DecodedPacketPayload::Audit(format!(
+                        "Map: Unit matrix is not a unit matrix (is {:?})",
+                        map.matrix
+                    ))
+                } else {
+                    DecodedPacketPayload::Map(map)
+                }
+            }
             PacketType::EntityProperty(p) => DecodedPacketPayload::EntityProperty(p),
             PacketType::Position(pos) => DecodedPacketPayload::Position((*pos).clone()),
             PacketType::PlayerOrientation(pos) => {
@@ -783,7 +848,24 @@ where
             PacketType::EntityCreate(e) => DecodedPacketPayload::EntityCreate(e),
             PacketType::PropertyUpdate(update) => DecodedPacketPayload::PropertyUpdate(update),
             PacketType::Version(version) => DecodedPacketPayload::Version(version.clone()),
-            PacketType::Unknown(u) => DecodedPacketPayload::Unknown(&u),
+            PacketType::Unknown(u) => {
+                if packet.packet_type == 0x18 {
+                    if audit
+                        && u != &[
+                            00, 00, 00, 00, 00, 00, 00, 00, 00, 00, 00, 00, 00, 00, 00, 00, 00, 00,
+                            00, 00, 00, 00, 00, 00, 00, 00, 00, 00, 00, 00, 00, 00, 00, 00, 00, 00,
+                            00, 00, 00, 00, 00, 00, 0x80, 0xbf, 00, 00, 0x80, 0xbf, 00, 00, 0x80,
+                            0xbf,
+                        ]
+                    {
+                        DecodedPacketPayload::Audit(format!("Camera18 unexpected value!"))
+                    } else {
+                        DecodedPacketPayload::Unknown(&u)
+                    }
+                } else {
+                    DecodedPacketPayload::Unknown(&u)
+                }
+            }
             PacketType::Invalid(u) => DecodedPacketPayload::Invalid(&u),
         };
         let decoded = Self {
