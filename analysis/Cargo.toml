@@ -1,0 +1,28 @@
+[package]
+name = "analysis"
+version = "0.1.0"
+edition = "2018"
+publish = false
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+graphics = ["plotters", "image"]
+
+[dependencies]
+#nom = "7.0.0"
+#hexdump = "0.1.0"
+#flate2 = "1.0.14"
+#serde = "1.0"
+#serde_derive = "1.0"
+#serde_json = "1.0"
+#thiserror = "1.0.19"
+#rust-crypto = "0.2.36"
+#roxmltree = "0.14.1"
+serde-pickle = "1.0.0"
+plotters = { version = "0.3.1", optional = true }
+image = { version = "0.23.4", optional = true }
+#rust-embed = "6.0.0"
+#modular-bitfield = "0.11.2"
+#bitreader = "0.3.4"
+wows-replays = { path = "../parser" }

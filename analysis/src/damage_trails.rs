@@ -1,13 +1,13 @@
-use crate::analyzer::decoder::{DecodedPacket, DecodedPacketPayload};
-use crate::analyzer::*;
-use crate::packet2::{EntityMethodPacket, Packet, PacketType};
-use crate::version::Version;
-use crate::ReplayMeta;
 use image::GenericImageView;
 use image::Pixel;
 use image::{imageops::FilterType, ImageFormat, RgbImage};
 use plotters::prelude::*;
 use std::collections::HashMap;
+use wows_replays::analyzer::decoder::{DecodedPacket, DecodedPacketPayload};
+use wows_replays::analyzer::*;
+use wows_replays::packet2::{EntityMethodPacket, Packet, PacketType};
+use wows_replays::version::Version;
+use wows_replays::ReplayMeta;
 
 pub struct DamageTrailsBuilder {
     output: String,
@@ -261,7 +261,7 @@ impl Analyzer for DamageMonitor {
                 if *method == "receiveDamageStat" {
                     let value = serde_pickle::de::value_from_slice(
                         match &args[0] {
-                            crate::rpc::typedefs::ArgValue::Blob(x) => x,
+                            wows_replays::rpc::typedefs::ArgValue::Blob(x) => x,
                             _ => panic!("foo"),
                         },
                         serde_pickle::de::DeOptions::new(),
@@ -271,7 +271,7 @@ impl Analyzer for DamageMonitor {
                 } else if *method == "receiveDamageReport" {
                     let value = serde_pickle::de::value_from_slice(
                         match &args[0] {
-                            crate::rpc::typedefs::ArgValue::Blob(x) => x,
+                            wows_replays::rpc::typedefs::ArgValue::Blob(x) => x,
                             _ => panic!("foo"),
                         },
                         serde_pickle::de::DeOptions::new(),
@@ -287,18 +287,18 @@ impl Analyzer for DamageMonitor {
                         return;
                     }
                     match &args[0] {
-                        crate::rpc::typedefs::ArgValue::Array(a) => {
+                        wows_replays::rpc::typedefs::ArgValue::Array(a) => {
                             for damage in a.iter() {
                                 let damage = match damage {
-                                    crate::rpc::typedefs::ArgValue::FixedDict(m) => m,
+                                    wows_replays::rpc::typedefs::ArgValue::FixedDict(m) => m,
                                     _ => panic!("foo"),
                                 };
                                 let aggressor = match damage.get("vehicleID").unwrap() {
-                                    crate::rpc::typedefs::ArgValue::Int32(i) => *i,
+                                    wows_replays::rpc::typedefs::ArgValue::Int32(i) => *i,
                                     _ => panic!("foo"),
                                 };
                                 let amount = match damage.get("damage").unwrap() {
-                                    crate::rpc::typedefs::ArgValue::Float32(f) => *f,
+                                    wows_replays::rpc::typedefs::ArgValue::Float32(f) => *f,
                                     _ => panic!("foo"),
                                 };
 
@@ -335,24 +335,24 @@ impl Analyzer for DamageMonitor {
                 } else if *method == "receiveArtilleryShots" {
                     println!("{}: receiveArtilleryShots({:?})", time, args);
                     match &args[0] {
-                        crate::rpc::typedefs::ArgValue::Array(a) => {
+                        wows_replays::rpc::typedefs::ArgValue::Array(a) => {
                             for salvo in a.iter() {
                                 //println!("Salvo: {:?}", salvo);
                                 let salvo = match salvo {
-                                    crate::rpc::typedefs::ArgValue::FixedDict(m) => m,
+                                    wows_replays::rpc::typedefs::ArgValue::FixedDict(m) => m,
                                     _ => panic!("foo"),
                                 };
                                 let owner_id = match salvo.get("ownerID").unwrap() {
-                                    crate::rpc::typedefs::ArgValue::Int32(i) => *i,
+                                    wows_replays::rpc::typedefs::ArgValue::Int32(i) => *i,
                                     _ => panic!("foo"),
                                 };
                                 for shot in match salvo.get("shots").unwrap() {
-                                    crate::rpc::typedefs::ArgValue::Array(a) => a,
+                                    wows_replays::rpc::typedefs::ArgValue::Array(a) => a,
                                     _ => panic!("foo"),
                                 } {
                                     //println!("Shot: {:?}", shot);
                                     let shot = match shot {
-                                        crate::rpc::typedefs::ArgValue::FixedDict(m) => m,
+                                        wows_replays::rpc::typedefs::ArgValue::FixedDict(m) => m,
                                         _ => panic!("foo"),
                                     };
                                     if !self.artillery_shots.contains_key(&owner_id) {
@@ -362,15 +362,15 @@ impl Analyzer for DamageMonitor {
                                         ArtilleryShot {
                                             start_time: packet.clock,
                                             start_pos: match shot.get("pos").unwrap() {
-                                                crate::rpc::typedefs::ArgValue::Vector3(v) => {
-                                                    v.clone()
-                                                }
+                                                wows_replays::rpc::typedefs::ArgValue::Vector3(
+                                                    v,
+                                                ) => v.clone(),
                                                 _ => panic!("foo"),
                                             },
                                             target: match shot.get("tarPos").unwrap() {
-                                                crate::rpc::typedefs::ArgValue::Vector3(v) => {
-                                                    v.clone()
-                                                }
+                                                wows_replays::rpc::typedefs::ArgValue::Vector3(
+                                                    v,
+                                                ) => v.clone(),
                                                 _ => panic!("foo"),
                                             },
                                         },

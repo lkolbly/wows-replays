@@ -263,7 +263,7 @@ fn damage_trails(replay: ReplayInfo) -> (rocket::http::ContentType, Vec<u8>) {
         let version_parts: Vec<_> = replay_file.meta.clientVersionFromExe.split(",").collect();
         assert!(version_parts.len() == 4);
 
-        let processor = wows_replays::analyzer::damage_trails::DamageTrailsBuilder::new("foo.png");
+        let processor = analysis::damage_trails::DamageTrailsBuilder::new("foo.png");
         let processor = processor.build(&replay_file.meta);
 
         // Parse packets
@@ -298,7 +298,7 @@ fn trails(replay: ReplayInfo) -> (rocket::http::ContentType, Vec<u8>) {
         let version_parts: Vec<_> = replay_file.meta.clientVersionFromExe.split(",").collect();
         assert!(version_parts.len() == 4);
 
-        let processor = wows_replays::analyzer::trails::TrailsBuilder::new("/tmp/tmp.png");
+        let processor = analysis::trails::TrailsBuilder::new("/tmp/tmp.png");
         let processor = processor.build(&replay_file.meta);
 
         // Parse packets

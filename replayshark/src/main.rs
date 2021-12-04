@@ -388,18 +388,6 @@ fn main() {
         .author("Lane Kolbly <lane@rscheme.org>")
         .about("Parses & processes World of Warships replay files")
         .subcommand(
-            SubCommand::with_name("trace")
-                .about("Renders an image showing the trails of ships over the course of the game")
-                .arg(
-                    Arg::with_name("out")
-                        .long("output")
-                        .help("Output PNG file to write")
-                        .takes_value(true)
-                        .required(true),
-                )
-                .arg(replay_arg.clone()),
-        )
-        .subcommand(
             SubCommand::with_name("survey")
                 .about("Runs the parser against a directory of replays to validate the parser")
                 .arg(
@@ -494,8 +482,23 @@ fn main() {
                         .help("Entity ID to apply to other filters if applicable"),
                 )
                 .arg(replay_arg.clone()),
-        )
-        .get_matches();
+        );
+
+    #[cfg(feature = "graphics")]
+    let matches = matches.subcommand(
+        SubCommand::with_name("trace")
+            .about("Renders an image showing the trails of ships over the course of the game")
+            .arg(
+                Arg::with_name("out")
+                    .long("output")
+                    .help("Output PNG file to write")
+                    .takes_value(true)
+                    .required(true),
+            )
+            .arg(replay_arg.clone()),
+    );
+
+    let matches = matches.get_matches();
 
     if let Some(matches) = matches.subcommand_matches("dump") {
         let input = matches.value_of("REPLAY").unwrap();
@@ -536,11 +539,14 @@ fn main() {
         let chatlogger = wows_replays::analyzer::chat::ChatLoggerBuilder::new();
         parse_replay(&std::path::PathBuf::from(input), chatlogger).unwrap();
     }
-    if let Some(matches) = matches.subcommand_matches("trace") {
-        let input = matches.value_of("REPLAY").unwrap();
-        let output = matches.value_of("out").unwrap();
-        let trailer = wows_replays::analyzer::trails::TrailsBuilder::new(output);
-        parse_replay(&std::path::PathBuf::from(input), trailer).unwrap();
+    #[cfg(feature = "graphics")]
+    {
+        if let Some(matches) = matches.subcommand_matches("trace") {
+            let input = matches.value_of("REPLAY").unwrap();
+            let output = matches.value_of("out").unwrap();
+            let trailer = analysis::trails::TrailsBuilder::new(output);
+            parse_replay(&std::path::PathBuf::from(input), trailer).unwrap();
+        }
     }
     if let Some(matches) = matches.subcommand_matches("survey") {
         let mut survey_result = SurveyResults::empty();

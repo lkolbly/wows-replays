@@ -1,11 +1,11 @@
-use crate::analyzer::*;
-use crate::packet2::{Packet, PacketType};
-use crate::ReplayMeta;
 use image::GenericImageView;
 use image::Pixel;
 use image::{imageops::FilterType, ImageFormat, RgbImage};
 use plotters::prelude::*;
 use std::collections::HashMap;
+use wows_replays::analyzer::*;
+use wows_replays::packet2::{Packet, PacketType};
+use wows_replays::ReplayMeta;
 
 pub struct TrailsBuilder {
     output: String,
@@ -20,7 +20,7 @@ impl TrailsBuilder {
 }
 
 impl AnalyzerBuilder for TrailsBuilder {
-    fn build(&self, meta: &crate::ReplayMeta) -> Box<dyn Analyzer> {
+    fn build(&self, meta: &wows_replays::ReplayMeta) -> Box<dyn Analyzer> {
         Box::new(TrailRenderer {
             trails: HashMap::new(),
             player_trail: vec![],
@@ -44,7 +44,10 @@ impl Analyzer for TrailRenderer {
                 if !self.trails.contains_key(&pos.pid) {
                     self.trails.insert(pos.pid, vec![]);
                 }
-                self.trails.get_mut(&pos.pid).unwrap().push((pos.position.x, pos.position.z));
+                self.trails
+                    .get_mut(&pos.pid)
+                    .unwrap()
+                    .push((pos.position.x, pos.position.z));
             }
             PacketType::PlayerOrientation(pos) => {
                 self.player_trail.push((pos.position.x, pos.position.z));

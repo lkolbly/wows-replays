@@ -24,6 +24,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "analysis"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "plotters",
+ "serde-pickle",
+ "wows-replays",
+]
+
+[[package]]
 name = "ansi_term"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1920,6 +1930,7 @@ dependencies = [
 name = "replayserver"
 version = "0.1.0"
 dependencies = [
+ "analysis",
  "chrono",
  "clap",
  "lazy_static",
@@ -1937,6 +1948,7 @@ dependencies = [
 name = "replayshark"
 version = "0.1.0"
 dependencies = [
+ "analysis",
  "built",
  "chrono",
  "clap",
@@ -3049,10 +3061,8 @@ dependencies = [
  "bitreader",
  "flate2",
  "hexdump",
- "image",
  "modular-bitfield",
  "nom",
- "plotters",
  "roxmltree",
  "rust-crypto",
  "rust-embed",
