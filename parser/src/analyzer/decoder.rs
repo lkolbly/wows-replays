@@ -4,6 +4,7 @@ use crate::unpack_rpc_args;
 use modular_bitfield::prelude::*;
 use serde_derive::Serialize;
 use std::collections::HashMap;
+use std::convert::TryInto;
 
 pub struct DecoderBuilder {
     silent: bool,
@@ -84,7 +85,12 @@ pub enum Ribbon {
     RocketPenetration,
     RocketNonPenetration,
     RocketTorpedoProtectionHit,
+    DepthChargeHit,
     ShotDownByAircraft,
+    BuffSeized,
+    SonarOneHit,
+    SonarTwoHits,
+    SonarNeutralized,
     Unknown(i8),
 }
 
@@ -100,6 +106,8 @@ pub enum DeathCause {
     AerialTorpedo,
     Detonation,
     Ramming,
+    DepthCharge,
+    SkipBombs,
     Unknown(u32),
 }
 
@@ -697,11 +705,14 @@ where
                 6 => DeathCause::Fire,
                 7 => DeathCause::Ramming,
                 9 => DeathCause::Flooding,
+                13 => DeathCause::DepthCharge,
                 14 => DeathCause::AerialRocket,
                 15 => DeathCause::Detonation,
                 17 => DeathCause::Artillery,
                 18 => DeathCause::Artillery,
                 19 => DeathCause::Artillery,
+                22 => DeathCause::SkipBombs,
+                28 => DeathCause::DepthCharge, // TODO: Why is this different from the above depth charge?
                 cause => {
                     if audit {
                         return DecodedPacketPayload::Audit(format!(
@@ -743,6 +754,11 @@ where
                 27 => Ribbon::ShotDownByAircraft,
                 28 => Ribbon::TorpedoProtectionHit,
                 30 => Ribbon::RocketTorpedoProtectionHit,
+                31 => Ribbon::DepthChargeHit,
+                33 => Ribbon::BuffSeized,
+                39 => Ribbon::SonarOneHit,
+                40 => Ribbon::SonarTwoHits,
+                41 => Ribbon::SonarNeutralized,
                 ribbon => {
                     if audit {
                         return DecodedPacketPayload::Audit(format!(
@@ -766,14 +782,8 @@ where
                     _ => panic!(),
                 };
                 v.push(DamageReceived {
-                    aggressor: match map.get("vehicleID").unwrap() {
-                        crate::rpc::typedefs::ArgValue::Int32(i) => *i,
-                        _ => panic!(),
-                    },
-                    damage: match map.get("damage").unwrap() {
-                        crate::rpc::typedefs::ArgValue::Float32(f) => *f,
-                        _ => panic!(),
-                    },
+                    aggressor: map.get("vehicleID").unwrap().try_into().unwrap(),
+                    damage: map.get("damage").unwrap().try_into().unwrap(),
                 });
             }
             DecodedPacketPayload::DamageReceived {
@@ -796,10 +806,11 @@ where
                 };
                 let vehicle_id = minimap_update.get("vehicleID").unwrap();
 
-                let packed_data = match minimap_update.get("packedData").unwrap() {
-                    crate::rpc::typedefs::ArgValue::Uint32(u) => *u,
-                    _ => panic!(),
-                };
+                let packed_data: u32 = minimap_update
+                    .get("packedData")
+                    .unwrap()
+                    .try_into()
+                    .unwrap();
                 let update = RawMinimapUpdate::from_bytes(packed_data.to_le_bytes());
                 let heading = update.heading() as f32 / 256. * 360. - 180.;
 
@@ -829,14 +840,7 @@ where
                 arg1: args1,
             }
         } else if *method == "onBattleEnd" {
-            let winning_team = match &args[0] {
-                crate::rpc::typedefs::ArgValue::Int8(i) => *i,
-                _ => panic!("foo"),
-            };
-            let unknown = match &args[1] {
-                crate::rpc::typedefs::ArgValue::Uint8(i) => *i,
-                _ => panic!("foo"),
-            };
+            let (winning_team, unknown) = unpack_rpc_args!(args, i8, u8);
             DecodedPacketPayload::BattleEnd {
                 winning_team,
                 unknown,
