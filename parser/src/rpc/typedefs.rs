@@ -491,43 +491,9 @@ into_unwrappable_type!(i64, ArgValue::Int64);
 into_unwrappable_type!(f32, ArgValue::Float32);
 into_unwrappable_type!(f64, ArgValue::Float64);
 
-/*impl<'a> std::convert::TryInto<u8> for &ArgValue<'a> {
-    type Error = ();
-
-    fn try_into(self) -> Result<u8, Self::Error> {
-        match self {
-            ArgValue::Uint8(i) => Ok(*i),
-            _ => Err(()),
-        }
-    }
-}
-
-impl<'a> std::convert::TryInto<u16> for &ArgValue<'a> {
-    type Error = ();
-
-    fn try_into(self) -> Result<u16, Self::Error> {
-        match self {
-            ArgValue::Uint16(i) => Ok(*i),
-            _ => Err(()),
-        }
-    }
-}
-
-impl<'a> std::convert::TryInto<i32> for &ArgValue<'a> {
-    type Error = ();
-
-    fn try_into(self) -> Result<i32, Self::Error> {
-        match self {
-            ArgValue::Int32(i) => Ok(*i),
-            _ => Err(()),
-        }
-    }
-}*/
-
 impl<'a, 'b, T> std::convert::TryFrom<&'b ArgValue<'a>> for Vec<T>
 where
     &'b ArgValue<'a>: std::convert::TryInto<T, Error = ()>,
-    //<&'b ArgValue<'a> as std::convert::TryInto<T>>::Error: std::fmt::Debug,
 {
     type Error = ();
 
