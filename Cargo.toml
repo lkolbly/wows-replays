@@ -6,4 +6,6 @@ members = [
     "parser",
     "replayshark",
     "replayserver",
+    "streamer",
+    "streamserver",
 ]
