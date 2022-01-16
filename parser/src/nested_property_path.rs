@@ -31,8 +31,8 @@ pub enum UpdateAction<'argtype> {
 
 #[derive(Debug, Serialize)]
 pub struct PropertyNesting<'argtype> {
-    levels: Vec<PropertyNestLevel<'argtype>>,
-    action: UpdateAction<'argtype>,
+    pub levels: Vec<PropertyNestLevel<'argtype>>,
+    pub action: UpdateAction<'argtype>,
 }
 
 /// This function emulates Python's slice semantics

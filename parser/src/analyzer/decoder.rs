@@ -39,6 +39,7 @@ impl AnalyzerBuilder for DecoderBuilder {
     }
 }
 
+/// Enumerates voicelines which can be said in the game.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub enum VoiceLine {
     IntelRequired,
@@ -51,17 +52,21 @@ pub enum VoiceLine {
     UsingHydroSearch,
     DefendTheBase, // TODO: ...except when it's "thank you"?
     SetSmokeScreen,
+    /// "Provide anti-aircraft support"
     ProvideAntiAircraft,
+    /// If a player is called out in the message, their avatar ID will be here.
     RequestingSupport(Option<u32>),
+    /// If a player is called out in the message, their avatar ID will be here.
     Retreat(Option<i32>),
 
-    /// Fields are (letter,number) and zero-indexed. e.g. F2 is (5,1)
+    /// The position is (letter,number) and zero-indexed. e.g. F2 is (5,1)
     AttentionToSquare((u32, u32)),
 
-    /// Field is the ID of the target
+    /// Field is the avatar ID of the target
     ConcentrateFire(i32),
 }
 
+/// Enumerates the ribbons which appear in the top-right
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy, Serialize)]
 pub enum Ribbon {
     PlaneShotDown,
@@ -111,43 +116,61 @@ pub enum DeathCause {
     Unknown(u32),
 }
 
+/// Contains the information describing a player
 #[derive(Debug, Clone, Serialize)]
 pub struct OnArenaStateReceivedPlayer {
+    /// The username of this player
     pub username: String,
+    /// The player's clan
     pub clan: String,
+    /// Their avatar ID in the game
     pub avatarid: i64,
+    /// Their ship ID in the game
     pub shipid: i64,
+    /// Unknown
     pub playerid: i64,
     //playeravatarid: i64,
+    /// Which team they're on.
     pub teamid: i64,
+    /// Their starting health
     pub health: i64,
 
+    /// This is a raw dump (with the values converted to strings) of every key for the player.
     // TODO: Replace String with the actual pickle value (which is cleanly serializable)
     pub raw: HashMap<i64, String>,
 }
 
+/// Indicates that the given attacker has dealt damage
 #[derive(Debug, Clone, Serialize)]
 pub struct DamageReceived {
+    /// Ship ID of the aggressor
     aggressor: i32,
+    /// Amount of damage dealt
     damage: f32,
 }
 
+/// Sent to update the minimap display
 #[derive(Debug, Clone, Serialize)]
 pub struct MinimapUpdate {
+    /// The ship ID of the ship to update
     entity_id: i32,
+    /// Set to true if the ship should disappear from the minimap (false otherwise)
     disappearing: bool,
+    /// The heading of the ship. Unit is degrees, 0 is up, positive is clockwise
+    /// (so 90.0 is East)
     heading: f32,
 
-    /// Zero is left edge, 1.0 is right edge
+    /// Zero is the left edge of the map, 1.0 is the right edge
     x: f32,
 
-    /// Zero is bottom edge, 1.0 is top edge
+    /// Zero is the bottom edge of the map, 1.0 is the top edge
     y: f32,
 
-    /// This appears to be something related to the big hunt
+    /// Unknown, but this appears to be something related to the big hunt
     unknown: bool,
 }
 
+/// Enumerates usable consumables in-game
 #[derive(Debug, Clone, Copy, Serialize)]
 pub enum Consumable {
     DamageControl,
@@ -178,34 +201,82 @@ pub enum CameraMode {
     Unknown(u32),
 }
 
+/// Enumerates the "cruise states". See <https://github.com/lkolbly/wows-replays/issues/14#issuecomment-976784004>
+/// for more information.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub enum CruiseState {
+    /// Possible values for the throttle range from -1 for reverse to 4 for full power ahead.
     Throttle,
+    /// Note that not all rudder changes are indicated via cruise states, only ones
+    /// set via the Q & E keys. Temporarily setting the rudder will not trigger this
+    /// packet.
+    ///
+    /// Possible associated values are:
+    /// - -2: Full rudder to port,
+    /// - -1: Half rudder to port,
+    /// - 0: Neutral
+    /// - 1: Half rudder to starboard,
+    /// - 2: Full rudder to starboard.
     Rudder,
+    /// Sets the dive depth. Known values are:
+    /// - 0: 0m
+    /// - 1: -6m (periscope depth)
+    /// - 2: -18m
+    /// - 3: -30m
+    /// - 4: -42m
+    /// - 5: -54m
+    /// - 6: -66m
+    /// - 7: -80m
     DiveDepth,
+    /// Indicates an unknown cruise state. Send me your replay!
     Unknown(u32),
 }
 
 #[derive(Debug, Serialize)]
 pub enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
+    /// Represents a chat message. Note that this only includes text chats, voicelines
+    /// are represented by the VoiceLine variant.
     Chat {
         entity_id: u32, // TODO: Is entity ID different than sender ID?
+        /// Avatar ID of the sender
         sender_id: i32,
+        /// Represents the audience for the chat: Division, team, or all.
         audience: &'replay str,
+        /// The actual chat message.
         message: &'replay str,
     },
+    /// Sent when a voice line is played (for example, "Wilco!")
     VoiceLine {
+        /// Avatar ID of the player sending the voiceline
         sender_id: i32,
+        /// True if the voiceline is visible in all chat, false if only in team chat
         is_global: bool,
+        /// Which voiceline it is.
         message: VoiceLine,
     },
+    /// Sent when the player earns a ribbon
     Ribbon(Ribbon),
+    /// Indicates the position of the given object.
     Position(crate::packet2::PositionPacket),
+    /// Indicates the position of the player's object or camera.
     PlayerOrientation(crate::packet2::PlayerOrientationPacket),
+    /// Indicates updating a damage statistic. The first tuple, `(i64,i64)`, is a two-part
+    /// label indicating what type of damage this refers to. The second tuple, `(i64,f64)`,
+    /// indicates the actual damage counter increment.
+    ///
+    /// Some known keys include:
+    /// - (1, 0) key is (# AP hits that dealt damage, total AP damage dealt)
+    /// - (1, 3) is (# artillery fired, total possible damage) ?
+    /// - (2, 0) is (# HE penetrations, total HE damage)
+    /// - (17, 0) is (# fire tick marks, total fire damage)
     DamageStat(Vec<((i64, i64), (i64, f64))>),
+    /// Sent when a ship is destroyed.
     ShipDestroyed {
+        /// The ship ID (note: Not the avatar ID) of the killer
         killer: i32,
+        /// The ship ID (note: Not the avatar ID) of the victim
         victim: i32,
+        /// Cause of death
         cause: DeathCause,
     },
     EntityMethod(&'rawpacket EntityMethodPacket<'argtype>),
@@ -215,43 +286,112 @@ pub enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
     EntityEnter(&'rawpacket crate::packet2::EntityEnterPacket),
     EntityLeave(&'rawpacket crate::packet2::EntityLeavePacket),
     EntityCreate(&'rawpacket crate::packet2::EntityCreatePacket<'argtype>),
+    /// Contains all of the info required to setup the arena state and show the initial loading screen.
     OnArenaStateReceived {
+        /// Unknown
         arg0: i64,
+        /// Unknown
         arg1: i8,
+        /// Unknown
         arg2: HashMap<i64, Vec<Option<HashMap<String, String>>>>,
+        /// A list of the players in this game
         players: Vec<OnArenaStateReceivedPlayer>,
     },
     CheckPing(u64),
+    /// Indicates that the given victim has received damage from one or more attackers.
     DamageReceived {
+        /// Ship ID of the ship being damaged
         victim: u32,
+        /// List of damages happening to this ship
         aggressors: Vec<DamageReceived>,
     },
+    /// Contains data for a minimap update
     MinimapUpdate {
+        /// A list of the updates to make to the minimap
         updates: Vec<MinimapUpdate>,
+        /// Unknown
         arg1: &'rawpacket Vec<crate::rpc::typedefs::ArgValue<'argtype>>,
     },
+    /// Indicates a property update. Note that many properties contain a hierarchy of properties,
+    /// for example the "state" property on the battle manager contains nested dictionaries and
+    /// arrays. The top-level entity and property are specified by the `entity_id` and `property`
+    /// fields. The nesting structure and how to modify the leaves are indicated by the
+    /// `update_cmd` field.
+    ///
+    /// Within the `update_cmd` field is two fields, `levels` and `action`. `levels` indicates how
+    /// to traverse to the leaf property, for example by following a dictionary key or array index.
+    /// `action` indicates what action to perform once there, such as setting a subproperty to
+    /// a specific value.
+    ///
+    /// For example, to set the `state[controlPoints][0][hasInvaders]` property, you will see a
+    /// packet payload that looks like:
+    /// ```
+    /// {
+    ///     "entity_id": 576258,
+    ///     "property": "state",
+    ///     "update_cmd": {
+    ///         "levels": [
+    ///             {"DictKey": "controlPoints"},
+    ///             {"ArrayIndex": 0}
+    ///         ],
+    ///         "action": {
+    ///             "SetKey":{"key":"hasInvaders","value":1}
+    ///         }
+    ///     }
+    /// }
+    /// ```
+    /// This says to take the "state" property on entity 576258, navigate to `state["controlPoints"][0]`,
+    /// and set the sub-key `hasInvaders` there to 1.
+    ///
+    /// The following properties and values are known:
+    /// - `state["controlPoints"][N]["invaderTeam"]`: Indicates the team ID of the team currently
+    ///   contesting the control point. -1 if nobody is invading point.
+    /// - `state["controlPoints"][N]["hasInvaders"]`: 1 if the point is being contested, 0 otherwise.
+    /// - `state["controlPoints"][N]["progress"]`: A tuple of two elements. The first is the fraction
+    ///   captured, ranging from 0 to 1 as the point is captured, and the second is the amount of
+    ///   time remaining until the point is captured.
+    /// - `state["controlPoints"][N]["bothInside"]`: 1 if both teams are currently in point, 0 otherwise.
+    /// - `state["missions"]["teamsScore"][N]["score"]`: The value of team N's score.
     PropertyUpdate(&'rawpacket crate::packet2::PropertyUpdatePacket<'argtype>),
+    /// Indicates that the battle has ended
     BattleEnd {
+        /// The team ID of the winning team (corresponds to the teamid in [OnArenaStateReceivedPlayer])
         winning_team: i8,
+        /// Unknown
+        // TODO: Probably how the game was won? (time expired, score, or ships destroyed)
         unknown: u8,
     },
+    /// Sent when a consumable is activated
     Consumable {
+        /// The ship ID of the ship using the consumable
         entity: u32,
+        /// The consumable
         consumable: Consumable,
+        /// How long the consumable will be active for
         duration: f32,
     },
+    /// Indicates a change to the "cruise state," which is the fixed settings for various controls
+    /// such as steering (using the Q & E keys), throttle, and dive planes.
     CruiseState {
+        /// Which cruise state is being affected
         state: CruiseState,
-        // See https://github.com/lkolbly/wows-replays/issues/14#issuecomment-976784004 for values
+        /// See [CruiseState] for what the values mean.
         value: i32,
     },
     Map(&'rawpacket crate::packet2::MapPacket<'replay>),
+    /// A string representation of the game version this replay is from.
     Version(String),
     Camera(&'rawpacket crate::packet2::CameraPacket),
+    /// Indicates a change in the current camera mode
     CameraMode(CameraMode),
+    /// If true, indicates that the player has enabled the "free look" camera (by holding right click)
     CameraFreeLook(bool),
+    /// This is a packet of unknown type
     Unknown(&'replay [u8]),
+    /// This is a packet of known type, but which we were unable to parse
     Invalid(&'rawpacket crate::packet2::InvalidPacket<'replay>),
+    /// If parsing with audits enabled, this indicates a packet that may be of special interest
+    /// for whoever is reading the audits.
     Audit(String),
     /*
     ArtilleryHit(ArtilleryHitPacket<'a>),
@@ -685,10 +825,6 @@ where
                         };
                         //println!("{:?}: {:?}", k, v);
 
-                        // The (1,0) key is (# AP hits that dealt damage, total AP damage dealt)
-                        // (1,3) is (# artillery fired, total possible damage) ?
-                        // (2, 0) is (# HE penetrations, total HE damage)
-                        // (17, 0) is (# fire tick marks, total fire damage)
                         stats.push((k, v));
                     }
                 }

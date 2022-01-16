@@ -137,8 +137,12 @@ pub struct EntityEnterPacket {
 
 #[derive(Debug, Serialize)]
 pub struct PropertyUpdatePacket<'argtype> {
+    /// Indicates the entity to update the property on
     pub entity_id: i32,
+    /// Indicates the property to update. Note that some properties have many
+    /// sub-properties.
     pub property: &'argtype str,
+    /// Indicates the update command to perform.
     pub update_cmd: crate::nested_property_path::PropertyNesting<'argtype>,
 }
 
