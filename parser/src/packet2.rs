@@ -764,6 +764,25 @@ impl<'argtype> Parser<'argtype> {
         }
         Ok(())
     }
+
+    /// Returns a tuple with:
+    /// - The number of bytes read, and
+    /// - The packet itself (if enough bytes are present)
+    pub fn parse_next_packet<'replay, 'parser>(
+        &'parser mut self,
+        i: &'replay [u8],
+    ) -> Result<(usize, Option<Packet<'replay, 'parser>>), ErrorKind> {
+        if i.len() < 12 {
+            return Ok((0, None));
+        }
+        let (_, packet_size) = le_u32(i)?;
+        let packet_size = packet_size as usize;
+        if i.len() < packet_size + 12 {
+            return Ok((0, None));
+        }
+        let (_, packet) = self.parse_packet(i)?;
+        Ok((packet_size + 12, Some(packet)))
+    }
 }
 
 pub trait PacketProcessor {
