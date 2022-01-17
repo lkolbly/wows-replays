@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 //use std::sync::mpsc::{channel, Receiver, Sender};
 use async_channel::{unbounded, Receiver, Sender};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Weak};
+use tokio::sync::Mutex;
 use tracing::*;
 
 lazy_static::lazy_static! {
@@ -23,7 +24,7 @@ impl Publisher {
     pub async fn upload(&mut self, data: TransportType) {
         for sub in self.senders.iter_mut() {
             if let Some(sub) = sub.upgrade() {
-                let sub = sub.lock().unwrap();
+                let sub = sub.lock().await;
                 sub.send(data.clone()).await.unwrap();
             }
         }
@@ -35,10 +36,10 @@ impl Publisher {
         self.senders = b.clone_subscribers(username);
     }*/
 
-    fn add_subscriber(&mut self, subscriber: Weak<Mutex<Sender<TransportType>>>) {
+    async fn add_subscriber(&mut self, subscriber: Weak<Mutex<Sender<TransportType>>>) {
         if let Some(subscriber) = subscriber.upgrade() {
             // Update them with the history
-            let subscriber = subscriber.lock().unwrap();
+            let subscriber = subscriber.lock().await;
             for item in self.history.iter() {
                 // If the mailbox has already hung up, that's fine
                 let _ = subscriber.send(item.clone());
@@ -52,17 +53,18 @@ pub struct PublisherProxy(Arc<Mutex<Publisher>>);
 
 impl PublisherProxy {
     pub async fn upload(&mut self, data: TransportType) {
-        let mut p = self.0.lock().unwrap();
+        let mut p = self.0.lock().await;
         p.upload(data).await;
     }
 
-    pub fn set_username(&mut self, username: &str) {
-        let mut p = self.0.lock().unwrap();
+    pub async fn set_username(&mut self, username: &str) {
+        let mut p = self.0.lock().await;
         //p.set_username(username);
         let senders = {
-            let mut b = p.broker.0.lock().unwrap();
+            let mut b = p.broker.0.lock().await;
             let senders = b.clone_subscribers(username);
-            b.register_publisher(username, Arc::downgrade(&self.0));
+            b.register_publisher(username, Arc::downgrade(&self.0))
+                .await;
             senders
         };
         p.senders = senders;
@@ -101,7 +103,7 @@ impl Broker {
         }))
     }
 
-    fn register_subscriber(
+    async fn register_subscriber(
         &mut self,
         username: &str,
         subscriber: Weak<Mutex<Sender<TransportType>>>,
@@ -117,13 +119,13 @@ impl Broker {
         // Check if this publisher already is registered
         if let Some(publisher) = self.publishers.get(username) {
             if let Some(publisher) = publisher.upgrade() {
-                let mut publisher = publisher.lock().unwrap();
-                publisher.add_subscriber(subscriber);
+                let mut publisher = publisher.lock().await;
+                publisher.add_subscriber(subscriber).await;
             }
         }
     }
 
-    fn register_publisher(&mut self, username: &str, publisher: Weak<Mutex<Publisher>>) {
+    async fn register_publisher(&mut self, username: &str, publisher: Weak<Mutex<Publisher>>) {
         if self.publishers.contains_key(username) {
             // If the current publisher is still active, that's a problem. Only one publisher
             // may be active for a given username (how would a single username be playing
@@ -145,27 +147,28 @@ impl Broker {
     }
 }
 
-struct BrokerProxy(Arc<Mutex<Broker>>);
+pub struct BrokerProxy(Arc<Mutex<Broker>>);
 
 impl BrokerProxy {
     pub fn get() -> Self {
         Self(BROKER.clone())
     }
 
-    pub fn subscribe(&mut self, username: &str) -> Mailbox {
+    pub async fn subscribe(&mut self, username: &str) -> Mailbox {
         let (sender, receiver) = unbounded();
         let sender = Arc::new(Mutex::new(sender));
 
         // Register the subscriber
         {
-            let mut b = self.0.lock().unwrap();
-            b.register_subscriber(username, Arc::downgrade(&sender));
+            let mut b = self.0.lock().await;
+            b.register_subscriber(username, Arc::downgrade(&sender))
+                .await;
         }
 
         Mailbox { sender, receiver }
     }
 
-    pub fn publish(&mut self) -> PublisherProxy {
+    pub async fn publish(&mut self) -> PublisherProxy {
         // We don't know the username of this upload yet
         PublisherProxy(Arc::new(Mutex::new(Publisher {
             history: vec![],
