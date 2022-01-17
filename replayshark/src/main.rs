@@ -482,6 +482,11 @@ fn main() {
                         .help("Entity ID to apply to other filters if applicable"),
                 )
                 .arg(replay_arg.clone()),
+        )
+        .subcommand(
+            SubCommand::with_name("dump-payload")
+                .about("Command to dump raw binary payload")
+                .arg(replay_arg.clone()),
         );
 
     #[cfg(feature = "graphics")]
@@ -616,5 +621,14 @@ fn main() {
                 replays[idx].1.playerVehicle
             );
         }
+    }
+    if let Some(matches) = matches.subcommand_matches("dump-payload") {
+        let replay_file = ReplayFile::from_file(&std::path::PathBuf::from(
+            matches.value_of("REPLAY").unwrap(),
+        ))
+        .unwrap();
+        std::io::stdout()
+            .write_all(&replay_file.packet_data)
+            .unwrap();
     }
 }
