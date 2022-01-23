@@ -325,7 +325,7 @@ pub enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
     ///
     /// For example, to set the `state[controlPoints][0][hasInvaders]` property, you will see a
     /// packet payload that looks like:
-    /// ```
+    /// ```ignore
     /// {
     ///     "entity_id": 576258,
     ///     "property": "state",
@@ -396,6 +396,76 @@ pub enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
     /*
     ArtilleryHit(ArtilleryHitPacket<'a>),
     */
+}
+
+fn try_convert_hashable_pickle_to_string(
+    value: serde_pickle::value::HashableValue,
+) -> serde_pickle::value::HashableValue {
+    match value {
+        serde_pickle::value::HashableValue::Bytes(b) => {
+            if let Ok(s) = std::str::from_utf8(&b) {
+                serde_pickle::value::HashableValue::String(s.to_owned())
+            } else {
+                serde_pickle::value::HashableValue::Bytes(b)
+            }
+        }
+        serde_pickle::value::HashableValue::Tuple(t) => serde_pickle::value::HashableValue::Tuple(
+            t.into_iter()
+                .map(|item| try_convert_hashable_pickle_to_string(item))
+                .collect(),
+        ),
+        serde_pickle::value::HashableValue::FrozenSet(s) => {
+            serde_pickle::value::HashableValue::FrozenSet(
+                s.into_iter()
+                    .map(|item| try_convert_hashable_pickle_to_string(item))
+                    .collect(),
+            )
+        }
+        value => value,
+    }
+}
+
+fn try_convert_pickle_to_string(value: serde_pickle::value::Value) -> serde_pickle::value::Value {
+    match value {
+        serde_pickle::value::Value::Bytes(b) => {
+            if let Ok(s) = std::str::from_utf8(&b) {
+                serde_pickle::value::Value::String(s.to_owned())
+            } else {
+                serde_pickle::value::Value::Bytes(b)
+            }
+        }
+        serde_pickle::value::Value::List(l) => serde_pickle::value::Value::List(
+            l.into_iter()
+                .map(|item| try_convert_pickle_to_string(item))
+                .collect(),
+        ),
+        serde_pickle::value::Value::Tuple(t) => serde_pickle::value::Value::Tuple(
+            t.into_iter()
+                .map(|item| try_convert_pickle_to_string(item))
+                .collect(),
+        ),
+        serde_pickle::value::Value::Set(s) => serde_pickle::value::Value::Set(
+            s.into_iter()
+                .map(|item| try_convert_hashable_pickle_to_string(item))
+                .collect(),
+        ),
+        serde_pickle::value::Value::FrozenSet(s) => serde_pickle::value::Value::FrozenSet(
+            s.into_iter()
+                .map(|item| try_convert_hashable_pickle_to_string(item))
+                .collect(),
+        ),
+        serde_pickle::value::Value::Dict(d) => serde_pickle::value::Value::Dict(
+            d.into_iter()
+                .map(|(k, v)| {
+                    (
+                        try_convert_hashable_pickle_to_string(k),
+                        try_convert_pickle_to_string(v),
+                    )
+                })
+                .collect(),
+        ),
+        value => value,
+    }
 }
 
 impl<'replay, 'argtype, 'rawpacket> DecodedPacketPayload<'replay, 'argtype, 'rawpacket>
@@ -647,6 +717,7 @@ where
                 serde_pickle::de::DeOptions::new(),
             )
             .unwrap();
+            let value = try_convert_pickle_to_string(value);
 
             let mut players_out = vec![];
             if let serde_pickle::value::Value::List(players) = &value {
@@ -717,13 +788,12 @@ where
                     */
                     let avatar = values.get(keys.get("avatarid").unwrap()).unwrap();
                     let username = values.get(keys.get("username").unwrap()).unwrap();
-                    let username = std::str::from_utf8(match username {
-                        serde_pickle::value::Value::Bytes(u) => u,
+                    let username = match username {
+                        serde_pickle::value::Value::String(s) => s,
                         _ => {
                             panic!("{:?}", username);
                         }
-                    })
-                    .unwrap();
+                    };
                     let clan = values.get(keys.get("clan").unwrap()).unwrap();
                     let clan = match clan {
                         serde_pickle::value::Value::String(s) => s.clone(),
