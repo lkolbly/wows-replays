@@ -29,14 +29,18 @@ impl Version {
     }
 
     pub fn is_at_least(&self, other: &Version) -> bool {
-        if self.major < other.major {
+        if self.major > other.major {
+            true
+        } else if self.major < other.major {
             false
+        } else if self.minor > other.minor {
+            true
         } else if self.minor < other.minor {
             false
-        } else if self.patch < other.patch {
-            false
-        } else {
+        } else if self.patch >= other.patch {
             true
+        } else {
+            false
         }
     }
 }
@@ -80,5 +84,37 @@ impl Datafiles {
             });
         }
         Ok(Cow::from(std::fs::read(p).unwrap()))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    fn assert_older_newer(older: Version, newer: Version) {
+        assert!(newer.is_at_least(&older));
+        assert!(newer.is_at_least(&newer));
+        assert!(!older.is_at_least(&newer));
+    }
+
+    #[test]
+    fn different_patch() {
+        let older = Version::from_client_exe("0,10,9,0");
+        let newer = Version::from_client_exe("0,10,10,0");
+        assert_older_newer(older, newer);
+    }
+
+    #[test]
+    fn different_minor() {
+        let older = Version::from_client_exe("0,10,9,0");
+        let newer = Version::from_client_exe("0,11,0,0");
+        assert_older_newer(older, newer);
+    }
+
+    #[test]
+    fn different_major() {
+        let older = Version::from_client_exe("0,11,5,0");
+        let newer = Version::from_client_exe("1,0,0,0");
+        assert_older_newer(older, newer);
     }
 }
