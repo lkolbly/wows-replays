@@ -2,6 +2,7 @@
 
 members = [
     "analysis",
+    "decxxd",
     "idxpkg",
     "parser",
     "replayshark",
