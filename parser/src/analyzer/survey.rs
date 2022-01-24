@@ -24,13 +24,22 @@ impl SurveyStats {
 pub struct SurveyBuilder {
     stats: Rc<RefCell<SurveyStats>>,
     skip_decoder: bool,
+    dump_packet: Option<String>,
+    filename: String,
 }
 
 impl SurveyBuilder {
-    pub fn new(stats: Rc<RefCell<SurveyStats>>, skip_decoder: bool) -> Self {
+    pub fn new(
+        stats: Rc<RefCell<SurveyStats>>,
+        skip_decoder: bool,
+        dump_packet: Option<&str>,
+        filename: String,
+    ) -> Self {
         Self {
             stats,
             skip_decoder,
+            dump_packet: dump_packet.map(|x| x.to_owned()),
+            filename,
         }
     }
 }
@@ -47,6 +56,8 @@ impl AnalyzerBuilder for SurveyBuilder {
             decoder: decoder::DecoderBuilder::new(true, true, None).build(meta),
             stats: self.stats.clone(),
             version: version,
+            dump_packet: self.dump_packet.as_ref().map(|x| x.parse().unwrap()),
+            filename: self.filename.clone(),
         })
     }
 }
@@ -56,6 +67,8 @@ struct Survey {
     decoder: Box<dyn Analyzer>,
     stats: Rc<RefCell<SurveyStats>>,
     version: crate::version::Version,
+    dump_packet: Option<u32>,
+    filename: String,
 }
 
 impl Analyzer for Survey {
@@ -74,6 +87,12 @@ impl Analyzer for Survey {
                     stats.audits.push(s.to_string());
                 }
                 _ => {}
+            }
+        }
+
+        if let Some(to_dump) = self.dump_packet {
+            if packet.packet_type == to_dump {
+                println!("{} {:?}", self.filename, packet);
             }
         }
 

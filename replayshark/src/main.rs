@@ -332,28 +332,40 @@ impl SurveyResults {
     }
 }
 
-fn survey_file(skip_decode: bool, replay: std::path::PathBuf) -> SurveyResult {
+fn survey_file(
+    skip_decode: bool,
+    dump_packet: Option<&str>,
+    replay: std::path::PathBuf,
+) -> SurveyResult {
     let filename = replay.file_name().unwrap().to_str().unwrap();
     let filename = filename.to_string();
 
-    print!("Parsing {}: ", truncate_string(&filename, 20));
-    std::io::stdout().flush().unwrap();
+    if dump_packet.is_none() {
+        print!("Parsing {}: ", truncate_string(&filename, 20));
+        std::io::stdout().flush().unwrap();
+    }
 
     let survey_stats = std::rc::Rc::new(std::cell::RefCell::new(
         wows_replays::analyzer::survey::SurveyStats::new(),
     ));
-    let survey =
-        wows_replays::analyzer::survey::SurveyBuilder::new(survey_stats.clone(), skip_decode);
+    let survey = wows_replays::analyzer::survey::SurveyBuilder::new(
+        survey_stats.clone(),
+        skip_decode,
+        dump_packet,
+        filename.clone(),
+    );
     match parse_replay(&std::path::PathBuf::from(replay), survey) {
         Ok(_) => {
             let stats = survey_stats.borrow();
-            if stats.invalid_packets > 0 {
-                println!(
-                    "OK ({} packets, {} invalid)",
-                    stats.total_packets, stats.invalid_packets
-                );
-            } else {
-                println!("OK ({} packets)", stats.total_packets);
+            if dump_packet.is_none() {
+                if stats.invalid_packets > 0 {
+                    println!(
+                        "OK ({} packets, {} invalid)",
+                        stats.total_packets, stats.invalid_packets
+                    );
+                } else {
+                    println!("OK ({} packets)", stats.total_packets);
+                }
             }
             SurveyResult::Success((
                 filename.to_string(),
@@ -364,15 +376,21 @@ fn survey_file(skip_decode: bool, replay: std::path::PathBuf) -> SurveyResult {
             ))
         }
         Err(ErrorKind::DatafileNotFound { version, .. }) => {
-            println!("Unsupported version {}", version.to_path());
+            if dump_packet.is_none() {
+                println!("Unsupported version {}", version.to_path());
+            }
             SurveyResult::UnsupportedVersion(version.to_path())
         }
         Err(ErrorKind::UnsupportedReplayVersion(n)) => {
-            println!("Unsupported version {}", n);
+            if dump_packet.is_none() {
+                println!("Unsupported version {}", n);
+            }
             SurveyResult::UnsupportedVersion(n)
         }
         Err(e) => {
-            println!("Parse error: {:?}", e);
+            if dump_packet.is_none() {
+                println!("Parse error: {:?}", e);
+            }
             SurveyResult::ParseFailure(format!("{:?}", e))
         }
     }
@@ -394,7 +412,7 @@ fn main() {
                     Arg::with_name("skip-decode")
                         .long("skip-decode")
                         .help("Don't run the decoder"),
-                )
+                ).arg(Arg::with_name("dump-packet").long("dump-packet").takes_value(true).help("Prints packets matching the given specification to stdout. If specified, other printing is silenced"))
                 .arg(
                     Arg::with_name("REPLAYS")
                         .help("The replay files to use")
@@ -562,7 +580,11 @@ fn main() {
                     continue;
                 }
                 let replay = entry.path().to_path_buf();
-                let result = survey_file(matches.is_present("skip-decode"), replay);
+                let result = survey_file(
+                    matches.is_present("skip-decode"),
+                    matches.value_of("dump-packet"),
+                    replay,
+                );
                 survey_result.add(result);
             }
         }
