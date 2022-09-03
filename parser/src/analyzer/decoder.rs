@@ -52,6 +52,10 @@ pub enum VoiceLine {
     UsingHydroSearch,
     DefendTheBase, // TODO: ...except when it's "thank you"?
     SetSmokeScreen,
+    FollowMe,
+    // TODO: definitely has associated data similar to AttentionToSquare
+    MapPointAttention, 
+    UsingSubmarineLocator,
     /// "Provide anti-aircraft support"
     ProvideAntiAircraft,
     /// If a player is called out in the message, their avatar ID will be here.
@@ -649,6 +653,9 @@ where
                 14 => VoiceLine::SetSmokeScreen,
                 15 => VoiceLine::UsingRadar,
                 16 => VoiceLine::UsingHydroSearch,
+                17 => VoiceLine::FollowMe,
+                18 => VoiceLine::MapPointAttention,
+                19 => VoiceLine::UsingSubmarineLocator,
                 _ => {
                     panic!("Unknown voice line {} a={:x} b={:x}!", line, a, b);
                 }
