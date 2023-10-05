@@ -29,7 +29,7 @@ pub struct ReplayMeta {
     pub weatherParams: HashMap<String, Vec<String>>,
     //mapBorder: Option<...>,
     pub duration: u32,
-    pub gameLogic: String,
+    //pub gameLogic: String,
     pub name: String,
     pub scenario: String,
     pub playerID: u32,
@@ -40,7 +40,7 @@ pub struct ReplayMeta {
     pub playerName: String,
     pub scenarioConfigId: u32,
     pub teamsCount: u32,
-    pub logic: String,
+    //pub logic: String,
     pub playerVehicle: String,
     pub battleDuration: u32,
 }
