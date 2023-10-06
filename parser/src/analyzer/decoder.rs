@@ -1,3 +1,4 @@
+use crate::analyzer::mapping::ReplayPlayerProperty;
 use crate::analyzer::{Analyzer, AnalyzerBuilder};
 use crate::packet2::{EntityMethodPacket, Packet, PacketType};
 use crate::unpack_rpc_args;
@@ -5,7 +6,6 @@ use modular_bitfield::prelude::*;
 use serde_derive::Serialize;
 use std::collections::HashMap;
 use std::convert::TryInto;
-use crate::analyzer::mapping::ReplayPlayerProperty;
 
 pub struct DecoderBuilder {
     silent: bool,
@@ -621,45 +621,6 @@ where
                 audience: std::str::from_utf8(&target).unwrap(),
                 message: std::str::from_utf8(&message).unwrap(),
             }
-        } else if *method == "receive_CommonCMD" {
-            let (audience, sender_id, line, a, b) = unpack_rpc_args!(args, u8, i32, u8, u32, u64);
-
-            let is_global = match audience {
-                0 => false,
-                1 => true,
-                _ => {
-                    panic!(
-                        "Got unknown audience {} sender=0x{:x} line={} a={:x} b={:x}",
-                        audience, sender_id, line, a, b
-                    );
-                }
-            };
-            let message = match line {
-                1 => VoiceLine::AttentionToSquare((a, b as u32)),
-                2 => VoiceLine::ConcentrateFire(b as i32),
-                3 => VoiceLine::RequestingSupport(None),
-                5 => VoiceLine::Wilco,
-                6 => VoiceLine::Negative,
-                7 => VoiceLine::WellDone, // TODO: Find the corresponding field
-                8 => VoiceLine::FairWinds,
-                9 => VoiceLine::Curses,
-                10 => VoiceLine::DefendTheBase,
-                11 => VoiceLine::ProvideAntiAircraft,
-                12 => VoiceLine::Retreat(if b != 0 { Some(b as i32) } else { None }),
-                13 => VoiceLine::IntelRequired,
-                14 => VoiceLine::SetSmokeScreen,
-                15 => VoiceLine::UsingRadar,
-                16 => VoiceLine::UsingHydroSearch,
-                _ => {
-                    panic!("Unknown voice line {} a={:x} b={:x}!", line, a, b);
-                }
-            };
-
-            DecodedPacketPayload::VoiceLine {
-                sender_id,
-                is_global,
-                message,
-            }
         } else if *method == "onArenaStateReceived" {
             let (arg0, arg1) = unpack_rpc_args!(args, i64, i8);
 
@@ -750,8 +711,7 @@ where
                         h.insert("skinId", 34);
                         h.insert("teamId", 35);
                         h
-                    }
-                    else if version
+                    } else if version
                         .is_at_least(&crate::version::Version::from_client_exe("0,10,7,0"))
                     {
                         // 0.10.9 inserted things at 0x1 and 0x1F
@@ -818,7 +778,9 @@ where
                         }
                     };
                     let shipId = values.get(&ReplayPlayerProperty::ShipId.into()).unwrap();
-                    let shipParamsId = values.get(&ReplayPlayerProperty::ShipParamsId.into()).unwrap();
+                    let shipParamsId = values
+                        .get(&ReplayPlayerProperty::ShipParamsId.into())
+                        .unwrap();
                     let _playeravatarid = values.get(&ReplayPlayerProperty::SkinId.into()).unwrap();
                     let teamId = values.get(&ReplayPlayerProperty::TeamId.into()).unwrap();
                     let maxHealth = values.get(&ReplayPlayerProperty::MaxHealth.into()).unwrap();
