@@ -230,9 +230,9 @@ impl Analyzer for DamageMonitor {
         match &decoded.payload {
             DecodedPacketPayload::OnArenaStateReceived { players, .. } => {
                 for player in players.iter() {
-                    if player.username == self.username {
-                        self.shipid = Some(player.shipid as u32);
-                        self.avatarid = Some(player.avatarid as u32);
+                    if player.name == self.username {
+                        self.shipid = Some(player.shipId as u32);
+                        self.avatarid = Some(player.avatarId as u32);
                         break;
                     }
                 }

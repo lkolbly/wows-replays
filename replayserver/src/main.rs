@@ -45,7 +45,7 @@ impl wows_replays::packet2::PacketProcessor for ReplayInfo {
         match &packet.payload {
             DecodedPacketPayload::OnArenaStateReceived { players, .. } => {
                 for player in players.iter() {
-                    if player.username == self.username {
+                    if player.name == self.username {
                         self.player_team = player.teamid;
                         break;
                     }
