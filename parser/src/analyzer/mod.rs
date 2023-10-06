@@ -1,4 +1,5 @@
 mod analyzer;
+mod mapping;
 pub mod chat;
 //pub mod damage_trails;
 pub mod decoder;

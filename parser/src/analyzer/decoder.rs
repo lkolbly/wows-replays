@@ -5,6 +5,7 @@ use modular_bitfield::prelude::*;
 use serde_derive::Serialize;
 use std::collections::HashMap;
 use std::convert::TryInto;
+use crate::analyzer::mapping::ReplayPlayerProperty;
 
 pub struct DecoderBuilder {
     silent: bool,
@@ -742,17 +743,16 @@ where
                         let mut h = HashMap::new();
                         h.insert("avatarId", 2);
                         h.insert("clanTag", 6);
-                        h.insert("maxHealth", 25);
-                        h.insert("name", 26);
-                        h.insert("shipId", 33);
-                        h.insert("shipParamsId", 34);
-                        h.insert("skinId", 35);
-                        h.insert("teamId", 36);
+                        h.insert("maxHealth", 23);
+                        h.insert("name", 24);
+                        h.insert("shipId", 32);
+                        h.insert("shipParamsId", 33);
+                        h.insert("skinId", 34);
+                        h.insert("teamId", 35);
                         h
                     }
                     else if version
                         .is_at_least(&crate::version::Version::from_client_exe("0,10,7,0"))
-                    
                     {
                         // 0.10.9 inserted things at 0x1 and 0x1F
                         let mut h = HashMap::new();
@@ -802,26 +802,26 @@ where
                     1e: Player ship ID
                     1f: Player ship ID (why does this appear twice?)
                     */
-                    let avatar = values.get(keys.get("avatarId").unwrap()).unwrap();
-                    let name = values.get(keys.get("name").unwrap()).unwrap();
+                    let avatar = values.get(&ReplayPlayerProperty::AvatarId.into()).unwrap();
+                    let name = values.get(&ReplayPlayerProperty::Name.into()).unwrap();
                     let name = match name {
                         serde_pickle::value::Value::String(s) => s,
                         _ => {
                             panic!("{:?}", name);
                         }
                     };
-                    let clanTag = values.get(keys.get("clanTag").unwrap()).unwrap();
+                    let clanTag = values.get(&ReplayPlayerProperty::ClanTag.into()).unwrap();
                     let clanTag = match clanTag {
                         serde_pickle::value::Value::String(s) => s.clone(),
                         _ => {
                             panic!("{:?}", clanTag);
                         }
                     };
-                    let shipId = values.get(keys.get("shipId").unwrap()).unwrap();
-                    let shipParamsId = values.get(keys.get("shipParamsId").unwrap()).unwrap();
-                    let _playeravatarid = values.get(keys.get("skinId").unwrap()).unwrap();
-                    let teamId = values.get(keys.get("teamId").unwrap()).unwrap();
-                    let maxHealth = values.get(keys.get("maxHealth").unwrap()).unwrap();
+                    let shipId = values.get(&ReplayPlayerProperty::ShipId.into()).unwrap();
+                    let shipParamsId = values.get(&ReplayPlayerProperty::ShipParamsId.into()).unwrap();
+                    let _playeravatarid = values.get(&ReplayPlayerProperty::SkinId.into()).unwrap();
+                    let teamId = values.get(&ReplayPlayerProperty::TeamId.into()).unwrap();
+                    let maxHealth = values.get(&ReplayPlayerProperty::MaxHealth.into()).unwrap();
 
                     let mut raw = HashMap::new();
                     for (k, v) in values.iter() {
@@ -829,7 +829,7 @@ where
                     }
                     players_out.push(OnArenaStateReceivedPlayer {
                         name: name.to_string(),
-                        clanTag: clanTag,
+                        clanTag: clanTag.to_string(),
                         avatarId: match avatar {
                             serde_pickle::value::Value::I64(i) => *i,
                             _ => panic!("foo"),
