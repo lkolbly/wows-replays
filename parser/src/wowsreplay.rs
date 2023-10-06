@@ -7,6 +7,14 @@ use std::io::Read;
 
 use crate::error::*;
 
+const REPLAY_SIGNATURE: [u8; 4] = [0x12, 0x32, 0x34, 0x11];
+
+const BLOWFISH_BLOCK_SIZE: usize = 8; // the size of long
+const BLOWFISH_KEY: [u8; 16] = [
+    0x29, 0xB7, 0xC9, 0x09, 0x38, 0x3F, 0x84, 0x88, 
+    0xFA, 0x98, 0xEC, 0x4E, 0x13, 0x19, 0x79, 0xFB,
+];
+
 #[allow(non_snake_case)]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct VehicleInfoMeta {
@@ -46,10 +54,9 @@ pub struct ReplayMeta {
 }
 
 #[derive(Debug)]
-struct Replay<'a> {
+struct Replay {
     meta: ReplayMeta,
-    uncompressed_size: u32,
-    compressed_stream: &'a [u8],
+    extra_data: Vec<String>,
 }
 
 fn decode_meta(meta: &[u8]) -> Result<ReplayMeta, Error> {
@@ -71,24 +78,52 @@ fn parse_meta(i: &[u8]) -> IResult<&[u8], ReplayMeta> {
 }
 
 fn replay_format(i: &[u8]) -> IResult<&[u8], Replay> {
-    let (i, unknown) = take(8usize)(i)?;
+    let (i, signature) = take(4usize)(i)?;
+    if signature != REPLAY_SIGNATURE {
+        return Err(failure_from_kind(ErrorKind::InvalidReplaySignature));
+    }
+
+    let (i, blocks_count) = le_u32(i)?;
     let (i, meta) = parse_meta(i)?;
-    let (i, uncompressed_size) = le_u32(i)?;
-    let (i, _stream_size) = le_u32(i)?;
+    // 12.6.0 adds extra data
+    let (i, extra_data) = extra_format(i, blocks_count)?;
     Ok((
         i,
         Replay {
-            meta: meta,
-            uncompressed_size: uncompressed_size,
-            compressed_stream: unknown,
+            meta,
+            extra_data
         },
     ))
+}
+
+/// Extra data block added in 12.6.0
+fn extra_format(i: &[u8], blocks_count: u32) -> IResult<&[u8], Vec<String>> {
+    let mut json_list = Vec::new();
+    let mut p = i;
+    for _ in 0..blocks_count - 1 {
+        // read 4 bytes for the block size
+        let (i, block_size) = le_u32(p)?;
+        let (i, block) = take(block_size)(i)?;
+        p = i; // update the pointer
+
+        // try to read this as a json string
+        let block = std::str::from_utf8(block);
+        if block.is_err() {
+            continue;
+        }
+
+        let block = block.unwrap();
+        json_list.push(block.to_string());
+    }
+
+    Ok((p, json_list))
 }
 
 #[derive(Debug)]
 pub struct ReplayFile {
     pub meta: ReplayMeta,
     pub packet_data: Vec<u8>,
+    pub extra_data: Vec<String>,
 }
 
 impl ReplayFile {
@@ -100,36 +135,50 @@ impl ReplayFile {
         let (remaining, result) = replay_format(&contents)?;
 
         // Decrypt
-        let key = [
-            0x29, 0xB7, 0xC9, 0x09, 0x38, 0x3F, 0x84, 0x88, 0xFA, 0x98, 0xEC, 0x4E, 0x13, 0x19,
-            0x79, 0xFB,
-        ];
-        let blowfish = crypto::blowfish::Blowfish::new(&key);
-        assert!(blowfish.block_size() == 8);
+        let blowfish = crypto::blowfish::Blowfish::new(&BLOWFISH_KEY);
+        if blowfish.block_size() != BLOWFISH_BLOCK_SIZE {
+            return Err(ErrorKind::InvalidBlowfishBlockSize);
+        }
         let encrypted = remaining; //result.compressed_stream
         let mut decrypted = vec![];
         decrypted.resize(encrypted.len(), 0u8);
-        let num_blocks = encrypted.len() / blowfish.block_size();
-        let mut previous = [0; 8]; // 8 == block size
+        let num_blocks = encrypted.len() / BLOWFISH_BLOCK_SIZE;
+        let mut previous: [u8; 8] = [0; BLOWFISH_BLOCK_SIZE];
+        let mut has_previous = false;
         for i in 0..num_blocks {
-            let offset = i * blowfish.block_size();
+            // first block is not used
+            if i == 0 {
+                continue;
+            }
+
+            let offset = i * BLOWFISH_BLOCK_SIZE;
             blowfish.decrypt_block(
-                &encrypted[offset..offset + blowfish.block_size()],
-                &mut decrypted[offset..offset + blowfish.block_size()],
+                &encrypted[offset..offset + BLOWFISH_BLOCK_SIZE],
+                &mut decrypted[offset..offset + BLOWFISH_BLOCK_SIZE],
             );
-            for j in 0..8 {
-                decrypted[offset + j] = decrypted[offset + j] ^ previous[j];
+
+            for j in 0..BLOWFISH_BLOCK_SIZE {
+                if has_previous {
+                    decrypted[offset + j] ^= previous[j];
+                }
                 previous[j] = decrypted[offset + j];
+                has_previous = true;
             }
         }
 
-        let mut deflater = flate2::read::ZlibDecoder::new(&decrypted[..]);
+        // validate the decrypted data's Zlib header, ignore first chunk because it was skipped
+        let decrypted = &decrypted[8..];
+        if decrypted[0] != 0x78 {
+            return Err(ErrorKind::InvalidZlibHeader);
+        }
+        let mut deflater = flate2::read::ZlibDecoder::new(decrypted);
         let mut contents = vec![];
         deflater.read_to_end(&mut contents).unwrap();
 
         Ok(ReplayFile {
             meta: result.meta,
             packet_data: contents,
+            extra_data: result.extra_data,
         })
     }
 }
