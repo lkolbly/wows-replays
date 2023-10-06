@@ -34,11 +34,11 @@ impl wows_replays::analyzer::Analyzer for InvestigativePrinter {
                     for player in players.iter() {
                         println!(
                             "{} {}/{} ({:x?}/{:x?})",
-                            player.username,
-                            player.shipid,
-                            player.avatarid,
-                            (player.shipid as u32).to_le_bytes(),
-                            (player.avatarid as u32).to_le_bytes()
+                            player.name,
+                            player.shipId,
+                            player.avatarId,
+                            (player.shipId as u32).to_le_bytes(),
+                            (player.avatarId as u32).to_le_bytes()
                         );
                     }
                 }
