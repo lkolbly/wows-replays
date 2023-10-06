@@ -701,7 +701,7 @@ impl<'argtype> Parser<'argtype> {
             0x8 => self.parse_entity_method_packet(i)?,
             0xA => self.parse_position_packet(i)?,
             0x16 => self.parse_version_packet(i)?,
-            0x22 => self.parse_nested_property_update(i)?,
+            0x23 => self.parse_nested_property_update(i)?,
             0x24 => self.parse_camera_packet(i)?, // Note: We suspect that 0x18 is this also
             0x26 => self.parse_camera_mode_packet(i)?,
             0x27 => self.parse_map_packet(i)?,

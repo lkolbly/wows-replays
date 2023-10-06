@@ -57,6 +57,12 @@ pub enum ErrorKind {
     DecoderRingFailure(String),
     #[error("Unable to process packet")]
     ParsingFailure(String),
+    #[error("Invalid replay signature")]
+    InvalidReplaySignature,
+    #[error("Invalid blowfish block size")]
+    InvalidBlowfishBlockSize,
+    #[error("Invalid zlib header")]
+    InvalidZlibHeader,
 }
 
 impl nom::error::ParseError<&[u8]> for Error {
