@@ -1,5 +1,6 @@
 use crypto::symmetriccipher::BlockDecryptor;
 use nom::bytes::complete::take;
+use nom::multi::count;
 use nom::number::complete::le_u32;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -29,7 +30,7 @@ pub struct ReplayMeta {
     pub weatherParams: HashMap<String, Vec<String>>,
     //mapBorder: Option<...>,
     pub duration: u32,
-    pub gameLogic: String,
+    pub gameLogic: Option<String>,
     pub name: String,
     pub scenario: String,
     pub playerID: u32,
@@ -40,7 +41,7 @@ pub struct ReplayMeta {
     pub playerName: String,
     pub scenarioConfigId: u32,
     pub teamsCount: u32,
-    pub logic: String,
+    pub logic: Option<String>,
     pub playerVehicle: String,
     pub battleDuration: u32,
 }
@@ -48,8 +49,7 @@ pub struct ReplayMeta {
 #[derive(Debug)]
 struct Replay<'a> {
     meta: ReplayMeta,
-    uncompressed_size: u32,
-    compressed_stream: &'a [u8],
+    extra_data: Vec<&'a [u8]>,
 }
 
 fn decode_meta(meta: &[u8]) -> Result<ReplayMeta, Error> {
@@ -70,17 +70,22 @@ fn parse_meta(i: &[u8]) -> IResult<&[u8], ReplayMeta> {
     Ok((i, meta))
 }
 
+fn block(i: &[u8]) -> IResult<&[u8], &[u8]> {
+    let (i, block_size) = le_u32(i)?;
+    take(block_size)(i)
+}
+
 fn replay_format(i: &[u8]) -> IResult<&[u8], Replay> {
-    let (i, unknown) = take(8usize)(i)?;
+    let (i, magic) = le_u32(i)?;
+    let (i, block_count) = le_u32(i)?;
     let (i, meta) = parse_meta(i)?;
-    let (i, uncompressed_size) = le_u32(i)?;
-    let (i, _stream_size) = le_u32(i)?;
+
+    let (i, blocks) = count(block, (block_count as usize) - 1)(i)?;
     Ok((
         i,
         Replay {
             meta: meta,
-            uncompressed_size: uncompressed_size,
-            compressed_stream: unknown,
+            extra_data: blocks,
         },
     ))
 }
@@ -92,7 +97,7 @@ pub struct ReplayFile {
 }
 
 impl ReplayFile {
-    pub fn from_file(replay: &std::path::PathBuf) -> Result<ReplayFile, ErrorKind> {
+    pub fn from_file(replay: &std::path::Path) -> Result<ReplayFile, ErrorKind> {
         let mut f = std::fs::File::open(replay).unwrap();
         let mut contents = vec![];
         f.read_to_end(&mut contents).unwrap();
@@ -112,6 +117,9 @@ impl ReplayFile {
         let num_blocks = encrypted.len() / blowfish.block_size();
         let mut previous = [0; 8]; // 8 == block size
         for i in 0..num_blocks {
+            if i == 0 {
+                continue;
+            }
             let offset = i * blowfish.block_size();
             blowfish.decrypt_block(
                 &encrypted[offset..offset + blowfish.block_size()],
@@ -123,7 +131,9 @@ impl ReplayFile {
             }
         }
 
-        let mut deflater = flate2::read::ZlibDecoder::new(&decrypted[..]);
+        std::fs::write("data.bin", &decrypted[8..]);
+
+        let mut deflater = flate2::read::ZlibDecoder::new(&decrypted[8..]);
         let mut contents = vec![];
         deflater.read_to_end(&mut contents).unwrap();
 
