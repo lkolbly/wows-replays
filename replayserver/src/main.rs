@@ -81,7 +81,7 @@ impl ReplayInfo {
     fn from(replay: &std::path::PathBuf) -> Result<ReplayInfo, wows_replays::ErrorKind> {
         let replay_file = ReplayFile::from_file(replay)?;
 
-        let datafiles = wows_replays::version::Datafiles::new(
+        let datafiles = wows_replays::version::EmbeddedDataFiles::new(
             std::path::PathBuf::from("versions"),
             wows_replays::version::Version::from_client_exe(&replay_file.meta.clientVersionFromExe),
         )?;
@@ -254,7 +254,7 @@ fn damage_trails(replay: ReplayInfo) -> (rocket::http::ContentType, Vec<u8>) {
     {
         let replay_file = ReplayFile::from_file(&replay.path).unwrap();
 
-        let datafiles = wows_replays::version::Datafiles::new(
+        let datafiles = wows_replays::version::EmbeddedDataFiles::new(
             std::path::PathBuf::from("versions"),
             wows_replays::version::Version::from_client_exe(&replay_file.meta.clientVersionFromExe),
         )
@@ -289,7 +289,7 @@ fn trails(replay: ReplayInfo) -> (rocket::http::ContentType, Vec<u8>) {
     {
         let replay_file = ReplayFile::from_file(&replay.path).unwrap();
 
-        let datafiles = wows_replays::version::Datafiles::new(
+        let datafiles = wows_replays::version::EmbeddedDataFiles::new(
             std::path::PathBuf::from("versions"),
             wows_replays::version::Version::from_client_exe(&replay_file.meta.clientVersionFromExe),
         )
@@ -366,7 +366,7 @@ impl<'r> rocket::response::Responder<'r, 'r> for DecodedResponder {
 fn download_decoded(replay: ReplayInfo) -> DecodedResponder {
     let replay_file = ReplayFile::from_file(&replay.path).unwrap();
 
-    let datafiles = wows_replays::version::Datafiles::new(
+    let datafiles = wows_replays::version::EmbeddedDataFiles::new(
         std::path::PathBuf::from("versions"),
         wows_replays::version::Version::from_client_exe(&replay_file.meta.clientVersionFromExe),
     )

@@ -156,7 +156,7 @@ fn parse_replay<P: wows_replays::analyzer::AnalyzerBuilder>(
     //let mut file = std::fs::File::create("foo.bin").unwrap();
     //file.write_all(&replay_file.packet_data).unwrap();
 
-    let datafiles = wows_replays::version::Datafiles::new(
+    let datafiles = wows_replays::version::EmbeddedDataFiles::new(
         std::path::PathBuf::from("versions"),
         wows_replays::version::Version::from_client_exe(&replay_file.meta.clientVersionFromExe),
     )?;
@@ -521,7 +521,7 @@ fn main() {
         parse_replay(&std::path::PathBuf::from(input), dump).unwrap();
     }
     if let Some(matches) = matches.subcommand_matches("spec") {
-        let datafiles = wows_replays::version::Datafiles::new(
+        let datafiles = wows_replays::version::EmbeddedDataFiles::new(
             std::path::PathBuf::from("versions"),
             wows_replays::version::Version::from_client_exe(matches.value_of("version").unwrap()),
         )

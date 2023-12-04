@@ -49,27 +49,55 @@ impl Version {
 #[folder = "../versions/"]
 struct Embedded;
 
-pub struct Datafiles {
+pub trait DataFileLoader {
+    fn get(&self, path: &str) -> Result<Cow<'static, [u8]>, ErrorKind>;
+}
+
+pub struct DataFileWithCallback<F> {
+    callback: F,
+}
+
+impl<F> DataFileWithCallback<F>
+where
+    F: Fn(&str) -> Result<Cow<'static, [u8]>, ErrorKind>,
+{
+    pub fn new(callback: F) -> Self {
+        Self { callback }
+    }
+}
+
+impl<F> DataFileLoader for DataFileWithCallback<F>
+where
+    F: Fn(&str) -> Result<Cow<'static, [u8]>, ErrorKind>,
+{
+    fn get(&self, path: &str) -> Result<Cow<'static, [u8]>, ErrorKind> {
+        (self.callback)(path)
+    }
+}
+
+pub struct EmbeddedDataFiles {
     base_path: PathBuf,
     version: Version,
 }
 
-impl Datafiles {
-    pub fn new(base: PathBuf, version: Version) -> Result<Datafiles, ErrorKind> {
+impl EmbeddedDataFiles {
+    pub fn new(base: PathBuf, version: Version) -> Result<EmbeddedDataFiles, ErrorKind> {
         let mut p = base.clone();
         p.push(version.to_path());
         // TODO: Also check the Embedded struct for if this path exists
         /*if !p.exists() {
             Err(ErrorKind::UnsupportedReplayVersion(version.to_path()))
         } else {*/
-        Ok(Datafiles {
+        Ok(EmbeddedDataFiles {
             base_path: base,
             version,
         })
         //}
     }
+}
 
-    pub fn get(&self, path: &str) -> Result<Cow<'static, [u8]>, ErrorKind> {
+impl DataFileLoader for EmbeddedDataFiles {
+    fn get(&self, path: &str) -> Result<Cow<'static, [u8]>, ErrorKind> {
         let mut p = self.base_path.clone();
         p.push(self.version.to_path());
         p.push(path);

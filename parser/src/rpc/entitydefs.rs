@@ -1,5 +1,8 @@
 //use crate::script_type::TypeAliases;
-use crate::rpc::typedefs::{parse_aliases, parse_type, ArgType, TypeAliases};
+use crate::{
+    rpc::typedefs::{parse_aliases, parse_type, ArgType, TypeAliases},
+    version::DataFileLoader,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Flags {
@@ -255,7 +258,7 @@ fn parse_def(def: &[u8], aliases: &TypeAliases) -> DefFile {
 }
 
 pub fn parse_scripts(
-    gamedata: &crate::version::Datafiles,
+    gamedata: &impl DataFileLoader,
 ) -> Result<Vec<EntitySpec>, crate::error::ErrorKind> {
     /*let alias_path = gamedata.lookup("scripts/entity_defs/alias.xml");
 
