@@ -50,6 +50,8 @@ pub struct ReplayMeta {
 struct Replay<'a> {
     meta: ReplayMeta,
     extra_data: Vec<&'a [u8]>,
+    decompressed_size: u32,
+    compressed_size: u32,
 }
 
 fn decode_meta(meta: &[u8]) -> Result<ReplayMeta, Error> {
@@ -81,11 +83,15 @@ fn replay_format(i: &[u8]) -> IResult<&[u8], Replay> {
     let (i, meta) = parse_meta(i)?;
 
     let (i, blocks) = count(block, (block_count as usize) - 1)(i)?;
+    let (i, decompressed_size) = le_u32(i)?;
+    let (i, compressed_size) = le_u32(i)?;
     Ok((
         i,
         Replay {
             meta: meta,
             extra_data: blocks,
+            decompressed_size,
+            compressed_size,
         },
     ))
 }
@@ -117,9 +123,6 @@ impl ReplayFile {
         let num_blocks = encrypted.len() / blowfish.block_size();
         let mut previous = [0; 8]; // 8 == block size
         for i in 0..num_blocks {
-            if i == 0 {
-                continue;
-            }
             let offset = i * blowfish.block_size();
             blowfish.decrypt_block(
                 &encrypted[offset..offset + blowfish.block_size()],
@@ -131,9 +134,7 @@ impl ReplayFile {
             }
         }
 
-        std::fs::write("data.bin", &decrypted[8..]);
-
-        let mut deflater = flate2::read::ZlibDecoder::new(&decrypted[8..]);
+        let mut deflater = flate2::read::ZlibDecoder::new(decrypted.as_slice());
         let mut contents = vec![];
         deflater.read_to_end(&mut contents).unwrap();
 
