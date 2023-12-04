@@ -210,6 +210,7 @@ pub struct Packet<'replay, 'argtype> {
     pub raw: &'replay [u8],
 }
 
+#[derive(Debug)]
 struct Entity<'argtype> {
     entity_type: u16,
     properties: Vec<ArgValue<'argtype>>,
@@ -299,13 +300,19 @@ impl<'argtype> Parser<'argtype> {
         &'b mut self,
         i: &'replay [u8],
     ) -> IResult<&'replay [u8], PacketType<'replay, 'argtype>> {
+        return Err(failure_from_kind(crate::ErrorKind::ParsingFailure(
+            "test".to_owned(),
+        )));
         let (i, entity_id) = le_u32(i)?;
         let (i, is_slice) = le_u8(i)?;
         let (i, payload_size) = le_u8(i)?;
         let (i, unknown) = take(3usize)(i)?;
-        assert!(unknown == [0, 0, 0]); // Note: This is almost certainly the upper 3 bytes of a u32
+        //assert_eq!(unknown, [0, 0, 0]); // Note: This is almost certainly the upper 3 bytes of a u32
         let payload = i;
-        assert!(payload_size as usize == payload.len());
+        //assert_eq!(payload_size as usize, payload.len());
+
+        println!("entity id: {entity_id}");
+        println!("{:#?}", self.entities.keys());
 
         let entity = self.entities.get_mut(&entity_id).unwrap();
         let entity_type = entity.entity_type;
@@ -647,6 +654,7 @@ impl<'argtype> Parser<'argtype> {
         &'b mut self,
         i: &'a [u8],
     ) -> IResult<&'a [u8], PacketType<'a, 'b>> {
+        std::fs::write("map.bin", i);
         let (i, space_id) = le_u32(i)?;
         let (i, arena_id) = le_i64(i)?;
         let (i, unknown1) = le_u32(i)?;
@@ -673,7 +681,7 @@ impl<'argtype> Parser<'argtype> {
     fn parse_naked_packet<'a, 'b>(
         &'b mut self,
         packet_type: u32,
-        i: &'a [u8],
+        packet: &'a [u8],
     ) -> IResult<&'a [u8], PacketType<'a, 'b>> {
         /*
         PACKETS_MAPPING = {
@@ -693,23 +701,23 @@ impl<'argtype> Parser<'argtype> {
         */
         let (i, payload) = match packet_type {
             //0x7 | 0x8 => self.parse_entity_packet(version, packet_type, i)?,
-            0x0 => self.parse_base_player_create(i)?,
-            0x1 => self.parse_cell_player_create(i)?,
-            0x3 => self.parse_entity_enter(i)?,
-            0x4 => self.parse_entity_leave(i)?,
-            0x5 => self.parse_entity_create(i)?,
-            0x7 => self.parse_entity_property_packet(i)?,
-            0x8 => self.parse_entity_method_packet(i)?,
-            0xA => self.parse_position_packet(i)?,
-            0x16 => self.parse_version_packet(i)?,
-            0x22 => self.parse_nested_property_update(i)?,
-            0x24 => self.parse_camera_packet(i)?, // Note: We suspect that 0x18 is this also
-            0x26 => self.parse_camera_mode_packet(i)?,
-            0x27 => self.parse_map_packet(i)?,
-            0x2b => self.parse_player_orientation_packet(i)?,
-            0x2e => self.parse_camera_freelook_packet(i)?,
-            0x31 => self.parse_cruise_state(i)?,
-            _ => self.parse_unknown_packet(i, i.len().try_into().unwrap())?,
+            0x0 => self.parse_base_player_create(packet)?,
+            0x1 => self.parse_cell_player_create(packet)?,
+            0x3 => self.parse_entity_enter(packet)?,
+            0x4 => self.parse_entity_leave(packet)?,
+            0x5 => self.parse_entity_create(packet)?,
+            0x7 => self.parse_entity_property_packet(packet)?,
+            0x8 => self.parse_entity_method_packet(packet)?,
+            0xA => self.parse_position_packet(packet)?,
+            0x16 => self.parse_version_packet(packet)?,
+            0x22 => self.parse_nested_property_update(packet)?,
+            0x24 => self.parse_camera_packet(packet)?, // Note: We suspect that 0x18 is this also
+            0x26 => self.parse_camera_mode_packet(packet)?,
+            0x27 => self.parse_map_packet(packet)?,
+            0x2b => self.parse_player_orientation_packet(packet)?,
+            0x2e => self.parse_camera_freelook_packet(packet)?,
+            0x31 => self.parse_cruise_state(packet)?,
+            _ => self.parse_unknown_packet(packet, packet.len().try_into().unwrap())?,
         };
         Ok((i, payload))
     }
@@ -718,9 +726,9 @@ impl<'argtype> Parser<'argtype> {
         let (i, packet_size) = le_u32(i)?;
         let (i, packet_type) = le_u32(i)?;
         let (i, clock) = le_f32(i)?;
-        let (remaining, i) = take(packet_size)(i)?;
-        let raw = i;
-        let (_i, payload) = match self.parse_naked_packet(packet_type, i) {
+        let (remaining, packet_data) = take(packet_size)(i)?;
+        let raw = packet_data;
+        let (_i, payload) = match self.parse_naked_packet(packet_type, packet_data) {
             Ok(x) => x,
             Err(nom::Err::Failure(Error {
                 kind: ErrorKind::UnsupportedReplayVersion(n),
@@ -730,10 +738,10 @@ impl<'argtype> Parser<'argtype> {
             }
             Err(e) => {
                 (
-                    &i[0..0], // Empty reference
+                    &packet_data[0..0], // Empty reference
                     PacketType::Invalid(InvalidPacket {
                         message: format!("{:?}", e),
-                        raw: i,
+                        raw: packet_data,
                     }),
                 )
             }

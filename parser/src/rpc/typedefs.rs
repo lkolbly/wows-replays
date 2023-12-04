@@ -154,7 +154,7 @@ pub enum ArgType {
     Tuple((Box<ArgType>, usize)),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, variantly::Variantly)]
 pub enum ArgValue<'argtype> {
     Uint8(u8),
     Uint16(u16),

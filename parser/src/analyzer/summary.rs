@@ -16,7 +16,7 @@ impl AnalyzerBuilder for SummaryBuilder {
         println!("Date/time: {}", meta.dateTime);
         println!("Map: {}", meta.mapDisplayName);
         println!("Vehicle: {}", meta.playerVehicle);
-        println!("Game mode: {} {}", meta.name, meta.gameLogic);
+        println!("Game mode: {} {:?}", meta.name, meta.gameLogic);
         println!("Game version: {}", meta.clientVersionFromExe);
         println!();
 
