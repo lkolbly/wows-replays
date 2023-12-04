@@ -1,3 +1,4 @@
+use kinded::Kinded;
 use nom::{
     bytes::complete::take, number::complete::le_f32, number::complete::le_i32,
     number::complete::le_i64, number::complete::le_u16, number::complete::le_u32,
@@ -176,7 +177,7 @@ pub struct MapPacket<'replay> {
     pub unknown: u8, // bool?
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Kinded)]
 pub enum PacketType<'replay, 'argtype> {
     Position(PositionPacket),
     BasePlayerCreate(BasePlayerCreatePacket<'replay, 'argtype>),
