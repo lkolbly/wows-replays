@@ -300,19 +300,13 @@ impl<'argtype> Parser<'argtype> {
         &'b mut self,
         i: &'replay [u8],
     ) -> IResult<&'replay [u8], PacketType<'replay, 'argtype>> {
-        return Err(failure_from_kind(crate::ErrorKind::ParsingFailure(
-            "test".to_owned(),
-        )));
         let (i, entity_id) = le_u32(i)?;
         let (i, is_slice) = le_u8(i)?;
         let (i, payload_size) = le_u8(i)?;
         let (i, unknown) = take(3usize)(i)?;
-        //assert_eq!(unknown, [0, 0, 0]); // Note: This is almost certainly the upper 3 bytes of a u32
+        assert_eq!(unknown, [0, 0, 0]); // Note: This is almost certainly the upper 3 bytes of a u32
         let payload = i;
-        //assert_eq!(payload_size as usize, payload.len());
-
-        println!("entity id: {entity_id}");
-        println!("{:#?}", self.entities.keys());
+        assert_eq!(payload_size as usize, payload.len());
 
         let entity = self.entities.get_mut(&entity_id).unwrap();
         let entity_type = entity.entity_type;
@@ -710,7 +704,7 @@ impl<'argtype> Parser<'argtype> {
             0x8 => self.parse_entity_method_packet(packet)?,
             0xA => self.parse_position_packet(packet)?,
             0x16 => self.parse_version_packet(packet)?,
-            0x22 => self.parse_nested_property_update(packet)?,
+            0x23 => self.parse_nested_property_update(packet)?,
             0x24 => self.parse_camera_packet(packet)?, // Note: We suspect that 0x18 is this also
             0x26 => self.parse_camera_mode_packet(packet)?,
             0x27 => self.parse_map_packet(packet)?,
