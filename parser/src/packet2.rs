@@ -195,6 +195,7 @@ pub enum PacketType<'replay, 'argtype> {
     CameraMode(u32),
     CameraFreeLook(u8),
     Map(MapPacket<'replay>),
+    BattleResults(&'replay str),
     Unknown(&'replay [u8]),
 
     /// These are packets which we thought we understood, but couldn't parse
@@ -294,6 +295,23 @@ impl<'argtype> Parser<'argtype> {
                 args,
             }),
         ))
+    }
+
+    fn parse_battle_results<'replay, 'b>(
+        &'b mut self,
+        i: &'replay [u8],
+    ) -> IResult<&'replay [u8], PacketType<'replay, 'argtype>> {
+        let (i, len) = le_u32(i)?;
+        assert_eq!(len as usize, i.len());
+        let (i, battle_results) = take(len)(i)?;
+
+        let results = std::str::from_utf8(battle_results).map_err(|_| {
+            failure_from_kind(crate::ErrorKind::ParsingFailure(
+                "Invalid UTF-8 data in battle results".to_string(),
+            ))
+        })?;
+
+        Ok((i, PacketType::BattleResults(results)))
     }
 
     fn parse_nested_property_update<'replay, 'b>(
@@ -555,7 +573,7 @@ impl<'argtype> Parser<'argtype> {
     ) -> IResult<&'a [u8], PacketType<'a, 'b>> {
         let (i, entity_id) = le_u32(i)?;
         let (i, space_id) = le_u32(i)?;
-        //let (i, unknown) = le_u16(i)?;
+        // let (i, _unknown) = le_u16(i)?;
         let (i, vehicle_id) = le_u32(i)?;
         let (i, position) = Vec3::parse(i)?;
         let (i, rotation) = Rot3::parse(i)?;
@@ -704,13 +722,14 @@ impl<'argtype> Parser<'argtype> {
             0x8 => self.parse_entity_method_packet(packet)?,
             0xA => self.parse_position_packet(packet)?,
             0x16 => self.parse_version_packet(packet)?,
+            0x22 => self.parse_battle_results(packet)?,
             0x23 => self.parse_nested_property_update(packet)?,
-            0x24 => self.parse_camera_packet(packet)?, // Note: We suspect that 0x18 is this also
-            0x26 => self.parse_camera_mode_packet(packet)?,
-            0x27 => self.parse_map_packet(packet)?,
-            0x2b => self.parse_player_orientation_packet(packet)?,
-            0x2e => self.parse_camera_freelook_packet(packet)?,
-            0x31 => self.parse_cruise_state(packet)?,
+            0x25 => self.parse_camera_packet(packet)?, // Note: We suspect that 0x18 is this also
+            0x27 => self.parse_camera_mode_packet(packet)?,
+            0x28 => self.parse_map_packet(packet)?,
+            0x2c => self.parse_player_orientation_packet(packet)?,
+            0x2f => self.parse_camera_freelook_packet(packet)?,
+            0x32 => self.parse_cruise_state(packet)?,
             _ => self.parse_unknown_packet(packet, packet.len().try_into().unwrap())?,
         };
         Ok((i, payload))

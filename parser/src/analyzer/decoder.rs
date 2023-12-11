@@ -54,7 +54,7 @@ pub enum VoiceLine {
     SetSmokeScreen,
     FollowMe,
     // TODO: definitely has associated data similar to AttentionToSquare
-    MapPointAttention, 
+    MapPointAttention,
     UsingSubmarineLocator,
     /// "Provide anti-aircraft support"
     ProvideAntiAircraft,
@@ -397,6 +397,8 @@ pub enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
     /// If parsing with audits enabled, this indicates a packet that may be of special interest
     /// for whoever is reading the audits.
     Audit(String),
+    /// End of battle results (free xp, damage details, etc.)
+    BattleResults(&'replay str),
     /*
     ArtilleryHit(ArtilleryHitPacket<'a>),
     */
@@ -594,6 +596,7 @@ where
                 }
             }
             PacketType::Invalid(u) => DecodedPacketPayload::Invalid(&u),
+            PacketType::BattleResults(results) => DecodedPacketPayload::BattleResults(results),
         }
     }
 
