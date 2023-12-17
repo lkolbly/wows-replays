@@ -1,0 +1,118 @@
+use strum_macros::EnumString;
+
+#[derive(EnumString)]
+pub enum Species {
+    AAircraft,
+    AbilitiesUnit,
+    AirBase,
+    AirCarrier,
+    Airship,
+    AntiAircraft,
+    Artillery,
+    ArtilleryUnit,
+    Auxiliary,
+    Battleship,
+    Bomb,
+    Bomber,
+    BuildingType,
+    Camoboost,
+    Camouflage,
+    Campaign,
+    CoastalArtillery,
+    CollectionAlbum,
+    CollectionCard,
+    Complex,
+    Cruiser,
+    DCharge,
+    DeathSettings,
+    DepthCharge,
+    Destroyer,
+    Dive,
+    DiveBomberTypeUnit,
+    DogTagDoll,
+    DogTagItem,
+    DogTagSlotsScheme,
+    DogTagUnique,
+    Drop,
+    DropVisual,
+    EngineUnit,
+    Ensign,
+    Event,
+    Fake,
+    Fighter,
+    FighterTypeUnit,
+    #[strum(serialize = "Fire control")]
+    FireControl,
+    Flags,
+    FlightControlUnit,
+    Generator,
+    GlobalWeather,
+    Globalboost,
+    Hull,
+    HullUnit,
+    IndividualTask,
+    Laser,
+    LocalWeather,
+    MSkin,
+    Main,
+    MapBorder,
+    Military,
+    Mine,
+    Mission,
+    Modifier,
+    Multiboost,
+    NewbieQuest,
+    Operation,
+    Permoflage,
+    PlaneTracer,
+    PrimaryWeaponsUnit,
+    RayTower,
+    Rocket,
+    Scout,
+    Search,
+    Secondary,
+    SecondaryWeaponsUnit,
+    SensorTower,
+    Sinking,
+    Skin,
+    Skip,
+    SkipBomb,
+    SkipBomberTypeUnit,
+    SonarUnit,
+    SpaceStation,
+    Submarine,
+    SuoUnit,
+    Task,
+    Torpedo,
+    TorpedoBomberTypeUnit,
+    TorpedoesUnit,
+    Upgrade,
+    Wave,
+    #[strum(serialize = "null")]
+    Null,
+    Unknown(String),
+}
+
+enum ParamType {
+    Building,
+    Vehicle,
+}
+
+pub struct TypeInfo {
+    nation: String,
+    species: Species,
+    typ: ParamType,
+}
+
+pub struct Param {
+    id: u64,
+    index: u64,
+    name: String,
+    type_info: TypeInfo,
+}
+
+trait GameParams {
+    fn by_id(&self, id: u64) -> &Param;
+    fn by_index(&self, id: u64) -> &Param;
+    fn by_name(&self, name: &str) -> &Param;
+}

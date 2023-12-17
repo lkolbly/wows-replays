@@ -2,7 +2,7 @@ use crypto::symmetriccipher::BlockDecryptor;
 use nom::bytes::complete::take;
 use nom::multi::count;
 use nom::number::complete::le_u32;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Read;
 

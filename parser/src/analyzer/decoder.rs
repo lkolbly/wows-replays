@@ -2,7 +2,7 @@ use crate::analyzer::{Analyzer, AnalyzerBuilder};
 use crate::packet2::{EntityMethodPacket, Packet, PacketType};
 use crate::unpack_rpc_args;
 use modular_bitfield::prelude::*;
-use serde_derive::Serialize;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::convert::TryInto;
 

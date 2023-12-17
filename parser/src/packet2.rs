@@ -5,7 +5,7 @@ use nom::{
     number::complete::le_u8,
 };
 
-use serde_derive::Serialize;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::convert::TryInto;
 
