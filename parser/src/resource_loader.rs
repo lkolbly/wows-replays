@@ -1,16 +1,61 @@
+use derive_builder::Builder;
+use serde::{Deserialize, Serialize};
 use strum_macros::EnumString;
 
 use crate::game_params::Param;
 
-#[derive(EnumString, Hash)]
+#[derive(Serialize, Deserialize, EnumString, Hash, Debug)]
 pub enum EntityType {
-    Avatar,
-    BattleLogic,
+    Ability,
+    Achievement,
+    AdjustmentShotActivator,
+    Aircraft,
+    BattleScript,
     Building,
-    Vehicle,
+    Campaign,
+    Catapult,
+    ClanSupply,
+    Collection,
+    Component,
+    Crew,
+    Director,
+    DogTag,
+    EventTrigger,
+    Exterior,
+    Finder,
+    Gun,
+    Modernization,
+    Other,
+    Projectile,
+    Radar,
+    RageModeProgressAction,
+    Reward,
+    RibbonActivator,
+    Sfx,
+    Ship,
+    SwitchTrigger,
+    SwitchVehicleVisualStateAction,
+    TimerActivator,
+    ToggleTriggerAction,
+    Unit,
+    VisibilityChangedActivator,
 }
 
-pub struct Vehicle;
+#[derive(Serialize, Deserialize, Clone, Builder, Debug)]
+pub struct Vehicle {
+    level: u32,
+    group: String,
+}
+
+impl Vehicle {
+    pub fn level(&self) -> u32 {
+        self.level
+    }
+
+    pub fn group(&self) -> &str {
+        self.group.as_ref()
+    }
+}
 
 pub trait ResourceLoader {
     fn localized_name(&self, param: &Param) -> Option<String>;

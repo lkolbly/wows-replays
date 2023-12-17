@@ -10,4 +10,5 @@ mod wowsreplay;
 
 pub use error::*;
 pub use rpc::entitydefs::parse_scripts;
+pub use strum;
 pub use wowsreplay::*;

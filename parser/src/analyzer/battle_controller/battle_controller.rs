@@ -47,11 +47,13 @@ struct Player<'res> {
 type SharedPlayer<'res> = Rc<RefCell<Player<'res>>>;
 type MethodName = String;
 
-struct BattleController<'res, G> {
+pub struct BattleController<'res, G> {
     game_meta: ReplayMeta,
     game_resources: &'res G,
     players: Vec<SharedPlayer<'res>>,
     player_entities: HashMap<u32, SharedPlayer<'res>>,
+    method_callbacks: HashMap<(EntityType, String), fn(&PacketType<'_, '_>)>,
+    property_callbacks: HashMap<(EntityType, String), fn(&ArgValue<'_>)>,
 }
 
 impl<'res, G> BattleController<'res, G>
@@ -79,6 +81,8 @@ where
             game_resources,
             players,
             player_entities: HashMap::default(),
+            method_callbacks: Default::default(),
+            property_callbacks: Default::default(),
         }
     }
 }
@@ -225,39 +229,39 @@ where
                 println!("{:?}", packet);
             }
             if packet.method == "onChatMessage" {
-                let sender = packet.args[0].clone().int_32().unwrap();
-                let mut sender_team = None;
-                let channel = std::str::from_utf8(packet.args[1].string_ref().unwrap()).unwrap();
-                let message = std::str::from_utf8(packet.args[2].string_ref().unwrap()).unwrap();
+                // let sender = packet.args[0].clone().int_32().unwrap();
+                // let mut sender_team = None;
+                // let channel = std::str::from_utf8(packet.args[1].string_ref().unwrap()).unwrap();
+                // let message = std::str::from_utf8(packet.args[2].string_ref().unwrap()).unwrap();
 
-                let channel = match channel {
-                    "battle_common" => ChatChannel::Global,
-                    "battle_team" => ChatChannel::Team,
-                    other => panic!("unknown channel {channel}"),
-                };
+                // let channel = match channel {
+                //     "battle_common" => ChatChannel::Global,
+                //     "battle_team" => ChatChannel::Team,
+                //     other => panic!("unknown channel {channel}"),
+                // };
 
-                let mut sender_name = "Unknown".to_owned();
-                for player in &self.game_meta.vehicles {
-                    if player.id == (sender as i64) {
-                        sender_name = player.name.clone();
-                        sender_team = Some(player.relation);
-                    }
-                }
+                // let mut sender_name = "Unknown".to_owned();
+                // for player in &self.game_meta.vehicles {
+                //     if player.id == (sender as i64) {
+                //         sender_name = player.name.clone();
+                //         sender_team = Some(player.relation);
+                //     }
+                // }
 
-                println!(
-                    "chat message from sender {sender_name} in channel {channel:?}: {message}"
-                );
+                // println!(
+                //     "chat message from sender {sender_name} in channel {channel:?}: {message}"
+                // );
 
-                self.replay_tab_state
-                    .lock()
-                    .unwrap()
-                    .game_chat
-                    .push(GameMessage {
-                        sender_relation: sender_team.unwrap(),
-                        sender_name,
-                        channel,
-                        message: message.to_string(),
-                    });
+                // self.replay_tab_state
+                //     .lock()
+                //     .unwrap()
+                //     .game_chat
+                //     .push(GameMessage {
+                //         sender_relation: sender_team.unwrap(),
+                //         sender_name,
+                //         channel,
+                //         message: message.to_string(),
+                //     });
             }
         }
         if let PacketTypeKind::Invalid = packet.payload.kind() {
