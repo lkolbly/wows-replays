@@ -6,9 +6,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     analyzer::Analyzer,
-    packet2::{Packet, PacketType, PacketTypeKind},
-    resource_loader::{EntityType, ResourceLoader, Vehicle},
-    rpc::typedefs::ArgValue,
+    game_params::Param,
+    packet2::{
+        EntityCreatePacket, EntityMethodPacket, EntityPropertyPacket, Packet, PacketType,
+        PacketTypeKind,
+    },
+    resource_loader::{ParamType, ResourceLoader, Vehicle},
+    rpc::{entitydefs::EntitySpec, typedefs::ArgValue},
     IResult, ReplayMeta,
 };
 
@@ -21,6 +25,28 @@ pub struct ShipConfig {
     signals: Vec<u32>,
 }
 
+impl ShipConfig {
+    pub fn signals(&self) -> &[u32] {
+        self.signals.as_ref()
+    }
+
+    pub fn units(&self) -> &[u32] {
+        self.units.as_ref()
+    }
+
+    pub fn modernization(&self) -> &[u32] {
+        self.modernization.as_ref()
+    }
+
+    pub fn hull(&self) -> u32 {
+        self.hull
+    }
+
+    pub fn abilities(&self) -> &[u32] {
+        self.abilities.as_ref()
+    }
+}
+
 #[derive(Debug)]
 pub struct Skills {
     aircraft_carrier: Vec<u8>,
@@ -31,36 +57,110 @@ pub struct Skills {
     submarine: Vec<u8>,
 }
 
-#[derive(Debug)]
-pub struct ShipLoadout {
-    config: ShipConfig,
-    skills: Skills,
+impl Skills {
+    pub fn submarine(&self) -> &[u8] {
+        self.submarine.as_ref()
+    }
+
+    pub fn auxiliary(&self) -> &[u8] {
+        self.auxiliary.as_ref()
+    }
+
+    pub fn destroyer(&self) -> &[u8] {
+        self.destroyer.as_ref()
+    }
+
+    pub fn cruiser(&self) -> &[u8] {
+        self.cruiser.as_ref()
+    }
+
+    pub fn battleship(&self) -> &[u8] {
+        self.battleship.as_ref()
+    }
+
+    pub fn aircraft_carrier(&self) -> &[u8] {
+        self.aircraft_carrier.as_ref()
+    }
 }
 
-struct Player<'res> {
+#[derive(Debug, Default)]
+pub struct ShipLoadout {
+    config: Option<ShipConfig>,
+    skills: Option<Skills>,
+}
+
+impl ShipLoadout {
+    pub fn skills(&self) -> Option<&Skills> {
+        self.skills.as_ref()
+    }
+
+    pub fn config(&self) -> Option<&ShipConfig> {
+        self.config.as_ref()
+    }
+}
+
+#[derive(Debug)]
+pub struct Player<'res> {
     name: String,
     relation: u32,
-    vehicle: &'res Vehicle,
-    loadout: Option<ShipLoadout>,
+    vehicle: &'res Param,
+    loadout: ShipLoadout,
 }
 
-type SharedPlayer<'res> = Rc<RefCell<Player<'res>>>;
+impl<'res> Player<'res> {
+    pub fn name(&self) -> &str {
+        self.name.as_ref()
+    }
+
+    pub fn relation(&self) -> u32 {
+        self.relation
+    }
+
+    pub fn vehicle(&self) -> &Param {
+        self.vehicle
+    }
+
+    pub fn loadout(&self) -> &ShipLoadout {
+        &self.loadout
+    }
+}
+
+pub type SharedPlayer<'res> = Rc<RefCell<Player<'res>>>;
 type MethodName = String;
 
-pub struct BattleController<'res, G> {
-    game_meta: ReplayMeta,
+pub trait EventHandler {
+    fn on_chat_message(&self, message: GameMessage) {}
+    fn on_aren_state_received(&self, entity_id: u32) {}
+}
+
+pub enum xEntityType {
+    Client = 1,
+    Cell = 2,
+    Base = 4,
+}
+
+pub struct Entity {
+    id: u32,
+    spec: EntitySpec,
+}
+
+impl Entity {}
+
+pub struct BattleController<'res, 'replay, G> {
+    game_meta: &'replay ReplayMeta,
     game_resources: &'res G,
     players: Vec<SharedPlayer<'res>>,
     player_entities: HashMap<u32, SharedPlayer<'res>>,
-    method_callbacks: HashMap<(EntityType, String), fn(&PacketType<'_, '_>)>,
-    property_callbacks: HashMap<(EntityType, String), fn(&ArgValue<'_>)>,
+    method_callbacks: HashMap<(ParamType, String), fn(&PacketType<'_, '_>)>,
+    property_callbacks: HashMap<(ParamType, String), fn(&ArgValue<'_>)>,
+    event_handler: Option<Rc<dyn EventHandler>>,
 }
 
-impl<'res, G> BattleController<'res, G>
+impl<'res, 'replay, G> BattleController<'res, 'replay, G>
 where
     G: ResourceLoader,
 {
-    pub fn new(game_meta: ReplayMeta, game_resources: &'res G) -> Self {
+    pub fn new(game_meta: &'replay ReplayMeta, game_resources: &'res G) -> Self {
         let players: Vec<SharedPlayer<'res>> = game_meta
             .vehicles
             .iter()
@@ -69,9 +169,9 @@ where
                     name: vehicle.name.clone(),
                     relation: vehicle.relation,
                     vehicle: game_resources
-                        .vehicle_by_id(vehicle.shipId)
+                        .param_by_id(vehicle.shipId as u32)
                         .expect("could not find vehicle"),
-                    loadout: None,
+                    loadout: Default::default(),
                 }))
             })
             .collect();
@@ -83,6 +183,152 @@ where
             player_entities: HashMap::default(),
             method_callbacks: Default::default(),
             property_callbacks: Default::default(),
+            event_handler: None,
+        }
+    }
+
+    pub fn set_event_handler(&mut self, event_handler: Rc<dyn EventHandler>) {
+        self.event_handler = Some(event_handler);
+    }
+
+    pub fn players(&self) -> &[SharedPlayer<'res>] {
+        self.players.as_ref()
+    }
+
+    pub fn game_mode(&self) -> Option<&str> {
+        let id = format!("IDS_{}", self.game_meta.scenario.to_uppercase());
+        self.game_resources.localized_name_from_id(&id)
+    }
+
+    pub fn map_name(&self) -> Option<&str> {
+        let id = format!("IDS_{}", self.game_meta.mapName.to_uppercase());
+        self.game_resources.localized_name_from_id(&id)
+    }
+
+    fn handle_chat_message<'packet>(&self, entity_id: u32, args: &[ArgValue<'packet>]) {
+        let sender = args[0].clone().int_32().unwrap();
+        let mut sender_team = None;
+        let channel = std::str::from_utf8(args[1].string_ref().unwrap()).unwrap();
+        let message = std::str::from_utf8(args[2].string_ref().unwrap()).unwrap();
+
+        let channel = match channel {
+            "battle_common" => ChatChannel::Global,
+            "battle_team" => ChatChannel::Team,
+            other => panic!("unknown channel {}", other),
+        };
+
+        let mut sender_name = "Unknown".to_owned();
+        for player in &self.game_meta.vehicles {
+            if player.id == (sender as i64) {
+                sender_name = player.name.clone();
+                sender_team = Some(player.relation);
+            }
+        }
+
+        println!("chat message from sender {sender_name} in channel {channel:?}: {message}");
+
+        let message = GameMessage {
+            sender_relation: sender_team.unwrap(),
+            sender_name,
+            channel,
+            message: message.to_string(),
+        };
+
+        if let Some(event_handler) = self.event_handler.as_ref() {
+            event_handler.on_chat_message(message);
+        }
+    }
+
+    fn handle_entity_method<'packet>(&self, packet: &EntityMethodPacket<'packet>) {
+        println!("\t {}", packet.method);
+
+        match packet.method {
+            "onChatMessage" => self.handle_chat_message(packet.entity_id, packet.args.as_slice()),
+            other => println!("Unhandled packet method {other}"),
+        }
+    }
+
+    fn handle_property_update<'packet>(&self, packet: &EntityPropertyPacket<'packet>) {}
+
+    fn update_ship_config(&self, entity_id: u32, blob: &[u8]) {
+        let (remainder, config) = parse_ship_config(blob).expect("failed to parse ship config");
+        assert!(remainder.is_empty());
+
+        println!("{:#?}", config);
+
+        self.player_entities
+            .get(&entity_id)
+            .expect("failed to get player by entity id")
+            .borrow_mut()
+            .loadout
+            .config = Some(config);
+    }
+
+    fn update_crew_modifiers<'packet>(
+        &self,
+        entity_id: u32,
+        skills: &HashMap<&'packet str, ArgValue<'packet>>,
+    ) {
+        if let Some(ArgValue::Array(learned_skills)) = skills.get("learnedSkills") {
+            let skills_from_idx = |idx: usize| -> Vec<u8> {
+                learned_skills[idx]
+                    .array_ref()
+                    .unwrap()
+                    .iter()
+                    .map(|idx| *(*idx).uint_8_ref().unwrap())
+                    .collect()
+            };
+
+            let skills = Skills {
+                aircraft_carrier: skills_from_idx(0),
+                battleship: skills_from_idx(1),
+                cruiser: skills_from_idx(2),
+                destroyer: skills_from_idx(3),
+                auxiliary: skills_from_idx(4),
+                submarine: skills_from_idx(5),
+            };
+
+            self.player_entities
+                .get(&entity_id)
+                .expect("failed to get player by entity id")
+                .borrow_mut()
+                .loadout
+                .skills = Some(skills);
+        } else {
+            panic!("learnedSkills is not an array");
+        }
+    }
+
+    fn update_property(&self, entity_id: u32, property_name: &str, value: &ArgValue) {
+        match property_name {
+            "shipConfig" => {
+                self.update_ship_config(
+                    entity_id,
+                    value.blob_ref().expect("shipConfig is not a blob"),
+                );
+            }
+            "crewModifiersCompactParams" => {
+                self.update_crew_modifiers(
+                    entity_id,
+                    value
+                        .fixed_dict_ref()
+                        .expect("crewModifiersCompactParams is not a dict"),
+                );
+            }
+            other => {
+                println!("Unhandled property update: {other:?}")
+            }
+        }
+    }
+
+    fn handle_entity_create<'packet>(&self, packet: &EntityCreatePacket<'packet>) {
+        println!("\t {:#?}", packet);
+        if packet.entity_type != "Vehicle" {
+            return;
+        }
+
+        for (prop, arg) in packet.props.iter() {
+            self.update_property(packet.entity_id, prop, arg);
         }
     }
 }
@@ -131,7 +377,7 @@ fn parse_ship_config<'a>(blob: &'a [u8]) -> IResult<&'a [u8], ShipConfig> {
     ))
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct GameMessage {
     pub sender_relation: u32,
     pub sender_name: String,
@@ -139,7 +385,7 @@ pub struct GameMessage {
     pub message: String,
 }
 
-impl<'res, G> Analyzer for BattleController<'res, G>
+impl<'res, 'replay, G> Analyzer for BattleController<'res, 'replay, G>
 where
     G: ResourceLoader,
 {
@@ -158,56 +404,7 @@ where
             std::fs::write("battle_results.json", results);
         }
         if let PacketType::EntityCreate(packet) = &packet.payload {
-            println!("\t {:#?}", packet);
-            if packet.entity_type != "Vehicle" {
-                return;
-            }
-
-            let config = if let Some(ArgValue::Blob(ship_config)) = packet.props.get("shipConfig") {
-                let config =
-                    parse_ship_config(ship_config.as_slice()).expect("failed to parse ship config");
-                println!("{:#?}", config);
-
-                config.1
-            } else {
-                panic!("ship config is not a blob")
-            };
-
-            let skills = if let Some(ArgValue::FixedDict(crew_modifiers)) =
-                packet.props.get("crewModifiersCompactParams")
-            {
-                if let Some(ArgValue::Array(learned_skills)) = crew_modifiers.get("learnedSkills") {
-                    let skills_from_idx = |idx: usize| -> Vec<u8> {
-                        learned_skills[idx]
-                            .array_ref()
-                            .unwrap()
-                            .iter()
-                            .map(|idx| *(*idx).uint_8_ref().unwrap())
-                            .collect()
-                    };
-
-                    Skills {
-                        aircraft_carrier: skills_from_idx(0),
-                        battleship: skills_from_idx(1),
-                        cruiser: skills_from_idx(2),
-                        destroyer: skills_from_idx(3),
-                        auxiliary: skills_from_idx(4),
-                        submarine: skills_from_idx(5),
-                    }
-                } else {
-                    panic!("learnedSkills is not an array");
-                }
-            } else {
-                panic!("crew modifiers is not a dictionary");
-            };
-
-            let loadout = ShipLoadout { config, skills };
-            println!("{:#?}", loadout);
-            self.player_entities
-                .get(&packet.entity_id)
-                .expect("failed to get player by entity id")
-                .borrow_mut()
-                .loadout = Some(loadout);
+            self.handle_entity_create(packet);
         }
 
         if let PacketType::BasePlayerCreate(packet) = &packet.payload {
@@ -224,45 +421,7 @@ where
         }
 
         if let PacketType::EntityMethod(packet) = &packet.payload {
-            println!("\t {}", packet.method);
-            if packet.method == "onBattleEnd" {
-                println!("{:?}", packet);
-            }
-            if packet.method == "onChatMessage" {
-                // let sender = packet.args[0].clone().int_32().unwrap();
-                // let mut sender_team = None;
-                // let channel = std::str::from_utf8(packet.args[1].string_ref().unwrap()).unwrap();
-                // let message = std::str::from_utf8(packet.args[2].string_ref().unwrap()).unwrap();
-
-                // let channel = match channel {
-                //     "battle_common" => ChatChannel::Global,
-                //     "battle_team" => ChatChannel::Team,
-                //     other => panic!("unknown channel {channel}"),
-                // };
-
-                // let mut sender_name = "Unknown".to_owned();
-                // for player in &self.game_meta.vehicles {
-                //     if player.id == (sender as i64) {
-                //         sender_name = player.name.clone();
-                //         sender_team = Some(player.relation);
-                //     }
-                // }
-
-                // println!(
-                //     "chat message from sender {sender_name} in channel {channel:?}: {message}"
-                // );
-
-                // self.replay_tab_state
-                //     .lock()
-                //     .unwrap()
-                //     .game_chat
-                //     .push(GameMessage {
-                //         sender_relation: sender_team.unwrap(),
-                //         sender_name,
-                //         channel,
-                //         message: message.to_string(),
-                //     });
-            }
+            self.handle_entity_method(packet);
         }
         if let PacketTypeKind::Invalid = packet.payload.kind() {
             println!("{:#?}", packet.payload);

@@ -2,11 +2,12 @@ use std::{collections::HashMap, rc::Rc};
 
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
-use strum_macros::EnumString;
+use strum_macros::{EnumString, IntoStaticStr};
+use variantly::Variantly;
 
 use crate::resource_loader::Vehicle;
 
-#[derive(Serialize, Deserialize, EnumString, Clone, Debug)]
+#[derive(Serialize, Deserialize, EnumString, Clone, Debug, Variantly, IntoStaticStr)]
 pub enum Species {
     AAircraft,
     AbilitiesUnit,
@@ -99,6 +100,13 @@ pub enum Species {
     Unknown(String),
 }
 
+impl Species {
+    pub fn translation_id(&self) -> String {
+        let name: &'static str = self.into();
+        format!("IDS_{}", name)
+    }
+}
+
 #[derive(Serialize, Deserialize, Builder, Debug)]
 pub struct Param {
     id: u32,
@@ -135,7 +143,7 @@ impl Param {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, Variantly)]
 pub enum ParamData {
     Vehicle(Vehicle),
 }

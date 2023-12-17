@@ -1,11 +1,12 @@
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumString;
+use variantly::Variantly;
 
 use crate::game_params::Param;
 
-#[derive(Serialize, Deserialize, EnumString, Hash, Debug)]
-pub enum EntityType {
+#[derive(Serialize, Deserialize, EnumString, Hash, Debug, Variantly)]
+pub enum ParamType {
     Ability,
     Achievement,
     AdjustmentShotActivator,
@@ -58,6 +59,7 @@ impl Vehicle {
 }
 
 pub trait ResourceLoader {
-    fn localized_name(&self, param: &Param) -> Option<String>;
-    fn vehicle_by_id(&self, id: u64) -> Option<&Vehicle>;
+    fn localized_name_from_param(&self, param: &Param) -> Option<&str>;
+    fn localized_name_from_id(&self, id: &str) -> Option<&str>;
+    fn param_by_id(&self, id: u32) -> Option<&Param>;
 }
