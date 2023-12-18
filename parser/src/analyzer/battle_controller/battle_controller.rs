@@ -1,4 +1,8 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{
+    cell::{Ref, RefCell},
+    collections::HashMap,
+    rc::Rc,
+};
 
 use derive_builder::Builder;
 use nom::{multi::count, number::complete::le_u32, sequence::pair};
@@ -8,8 +12,8 @@ use crate::{
     analyzer::Analyzer,
     game_params::Param,
     packet2::{
-        EntityCreatePacket, EntityMethodPacket, EntityPropertyPacket, Packet, PacketType,
-        PacketTypeKind,
+        EntityCreatePacket, EntityMethodPacket, EntityPropertyPacket, Packet, PacketProcessor,
+        PacketType, PacketTypeKind,
     },
     resource_loader::{ParamType, ResourceLoader, Vehicle},
     rpc::{entitydefs::EntitySpec, typedefs::ArgValue},
@@ -101,6 +105,7 @@ impl ShipLoadout {
 
 #[derive(Debug)]
 pub struct Player<'res> {
+    id: u32,
     name: String,
     relation: u32,
     vehicle: &'res Param,
@@ -122,6 +127,10 @@ impl<'res> Player<'res> {
 
     pub fn loadout(&self) -> &ShipLoadout {
         &self.loadout
+    }
+
+    pub fn id(&self) -> u32 {
+        self.id
     }
 }
 
@@ -154,6 +163,7 @@ pub struct BattleController<'res, 'replay, G> {
     method_callbacks: HashMap<(ParamType, String), fn(&PacketType<'_, '_>)>,
     property_callbacks: HashMap<(ParamType, String), fn(&ArgValue<'_>)>,
     event_handler: Option<Rc<dyn EventHandler>>,
+    game_chat: RefCell<Vec<GameMessage>>,
 }
 
 impl<'res, 'replay, G> BattleController<'res, 'replay, G>
@@ -166,6 +176,7 @@ where
             .iter()
             .map(|vehicle| {
                 Rc::new(RefCell::new(Player {
+                    id: vehicle.id as u32,
                     name: vehicle.name.clone(),
                     relation: vehicle.relation,
                     vehicle: game_resources
@@ -184,6 +195,7 @@ where
             method_callbacks: Default::default(),
             property_callbacks: Default::default(),
             event_handler: None,
+            game_chat: Default::default(),
         }
     }
 
@@ -195,14 +207,30 @@ where
         self.players.as_ref()
     }
 
-    pub fn game_mode(&self) -> Option<&str> {
+    pub fn game_mode(&self) -> String {
         let id = format!("IDS_{}", self.game_meta.scenario.to_uppercase());
-        self.game_resources.localized_name_from_id(&id)
+        self.game_resources
+            .localized_name_from_id(&id)
+            .unwrap_or_else(|| self.game_meta.scenario.clone())
     }
 
-    pub fn map_name(&self) -> Option<&str> {
+    pub fn map_name(&self) -> String {
         let id = format!("IDS_{}", self.game_meta.mapName.to_uppercase());
-        self.game_resources.localized_name_from_id(&id)
+        self.game_resources
+            .localized_name_from_id(&id)
+            .unwrap_or_else(|| self.game_meta.mapName.clone())
+    }
+
+    pub fn player_name(&self) -> &str {
+        self.game_meta.playerName.as_ref()
+    }
+
+    pub fn match_group(&self) -> &str {
+        self.game_meta.matchGroup.as_ref()
+    }
+
+    pub fn game_version(&self) -> &str {
+        self.game_meta.clientVersionFromExe.as_ref()
     }
 
     fn handle_chat_message<'packet>(&self, entity_id: u32, args: &[ArgValue<'packet>]) {
@@ -234,6 +262,9 @@ where
             message: message.to_string(),
         };
 
+        let mut chat = self.game_chat.borrow_mut();
+        chat.push(message.clone());
+
         if let Some(event_handler) = self.event_handler.as_ref() {
             event_handler.on_chat_message(message);
         }
@@ -252,16 +283,16 @@ where
 
     fn update_ship_config(&self, entity_id: u32, blob: &[u8]) {
         let (remainder, config) = parse_ship_config(blob).expect("failed to parse ship config");
-        assert!(remainder.is_empty());
+        // assert!(remainder.is_empty());
 
         println!("{:#?}", config);
 
-        self.player_entities
-            .get(&entity_id)
-            .expect("failed to get player by entity id")
-            .borrow_mut()
-            .loadout
-            .config = Some(config);
+        // self.player_entities
+        //     .get(&entity_id)
+        //     .expect("failed to get player by entity id")
+        //     .borrow_mut()
+        //     .loadout
+        //     .config = Some(config);
     }
 
     fn update_crew_modifiers<'packet>(
@@ -288,12 +319,12 @@ where
                 submarine: skills_from_idx(5),
             };
 
-            self.player_entities
-                .get(&entity_id)
-                .expect("failed to get player by entity id")
-                .borrow_mut()
-                .loadout
-                .skills = Some(skills);
+            // self.player_entities
+            //     .get(&entity_id)
+            //     .expect("failed to get player by entity id")
+            //     .borrow_mut()
+            //     .loadout
+            //     .skills = Some(skills);
         } else {
             panic!("learnedSkills is not an array");
         }
@@ -330,6 +361,10 @@ where
         for (prop, arg) in packet.props.iter() {
             self.update_property(packet.entity_id, prop, arg);
         }
+    }
+
+    pub fn game_chat(&self) -> Ref<[GameMessage]> {
+        Ref::map(self.game_chat.borrow(), |r| r.as_slice())
     }
 }
 
@@ -389,7 +424,7 @@ impl<'res, 'replay, G> Analyzer for BattleController<'res, 'replay, G>
 where
     G: ResourceLoader,
 {
-    fn process(&mut self, packet: &Packet<'_, '_>) {
+    fn process(&self, packet: &Packet<'_, '_>) {
         println!(
             "packet: {}, type: 0x{:x}, len: {}",
             packet.payload.kind(),
@@ -429,4 +464,13 @@ where
     }
 
     fn finish(&self) {}
+}
+
+impl<'res, 'replay, G> PacketProcessor for BattleController<'res, 'replay, G>
+where
+    G: ResourceLoader,
+{
+    fn process(&self, packet: Packet<'_, '_>) {
+        Analyzer::process(self, &packet);
+    }
 }

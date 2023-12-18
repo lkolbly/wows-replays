@@ -60,6 +60,6 @@ impl Vehicle {
 
 pub trait ResourceLoader {
     fn localized_name_from_param(&self, param: &Param) -> Option<&str>;
-    fn localized_name_from_id(&self, id: &str) -> Option<&str>;
+    fn localized_name_from_id(&self, id: &str) -> Option<String>;
     fn param_by_id(&self, id: u32) -> Option<&Param>;
 }

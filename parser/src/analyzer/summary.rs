@@ -2,6 +2,8 @@ use crate::analyzer::*;
 use crate::packet2::{EntityMethodPacket, Packet, PacketType};
 use std::collections::HashMap;
 
+use super::analyzer::{AnalyzerMut, AnalyzerMutBuilder};
+
 pub struct SummaryBuilder;
 
 impl SummaryBuilder {
@@ -10,8 +12,8 @@ impl SummaryBuilder {
     }
 }
 
-impl AnalyzerBuilder for SummaryBuilder {
-    fn build(&self, meta: &crate::ReplayMeta) -> Box<dyn Analyzer> {
+impl AnalyzerMutBuilder for SummaryBuilder {
+    fn build(&self, meta: &crate::ReplayMeta) -> Box<dyn AnalyzerMut> {
         println!("Username: {}", meta.playerName);
         println!("Date/time: {}", meta.dateTime);
         println!("Map: {}", meta.mapDisplayName);
@@ -58,8 +60,8 @@ struct Summary {
     damage: HashMap<(i64, i64), (i64, f64)>,
 }
 
-impl Analyzer for Summary {
-    fn finish(&self) {
+impl AnalyzerMut for Summary {
+    fn finish(&mut self) {
         for (ribbon, count) in self.ribbons.iter() {
             println!("{:?}: {}", ribbon, count);
         }
@@ -72,7 +74,7 @@ impl Analyzer for Summary {
         );
     }
 
-    fn process(&mut self, packet: &Packet<'_, '_>) {
+    fn process_mut(&mut self, packet: &Packet<'_, '_>) {
         // Collect banners, damage reports, etc.
         match packet {
             Packet {

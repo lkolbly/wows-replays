@@ -39,7 +39,11 @@ struct ReplayInfo {
 }
 
 impl wows_replays::packet2::PacketProcessor for ReplayInfo {
-    fn process(&mut self, packet: Packet<'_, '_>) {
+    fn process(&self, packet: Packet<'_, '_>) {
+        panic!("ReplayInfo should only be parsed mutably");
+    }
+
+    fn process_mut(&mut self, packet: Packet<'_, '_>) {
         let packet =
             wows_replays::analyzer::decoder::DecodedPacket::from(&self.version, false, &packet);
         match &packet.payload {
@@ -341,7 +345,11 @@ struct DecodedResponder {
 }
 
 impl wows_replays::packet2::PacketProcessor for DecodedResponder {
-    fn process(&mut self, packet: Packet<'_, '_>) {
+    fn process(&self, packet: Packet<'_, '_>) {
+        panic!("DecodedResponder should only be parsed mutably");
+    }
+
+    fn process_mut(&mut self, packet: Packet<'_, '_>) {
         let packet =
             wows_replays::analyzer::decoder::DecodedPacket::from(&self.version, false, &packet);
         let encoded = serde_json::to_string(&packet).unwrap();

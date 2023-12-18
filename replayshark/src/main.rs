@@ -18,10 +18,10 @@ struct InvestigativePrinter {
     version: wows_replays::version::Version,
 }
 
-impl wows_replays::analyzer::Analyzer for InvestigativePrinter {
-    fn finish(&self) {}
+impl wows_replays::analyzer::AnalyzerMut for InvestigativePrinter {
+    fn finish(&mut self) {}
 
-    fn process(&mut self, packet: &wows_replays::packet2::Packet<'_, '_>) {
+    fn process_mut(&mut self, packet: &wows_replays::packet2::Packet<'_, '_>) {
         let decoded =
             wows_replays::analyzer::decoder::DecodedPacket::from(&self.version, true, packet);
 

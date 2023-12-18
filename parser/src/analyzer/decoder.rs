@@ -6,6 +6,8 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::convert::TryInto;
 
+use super::analyzer::{AnalyzerMut, AnalyzerMutBuilder};
+
 pub struct DecoderBuilder {
     silent: bool,
     no_meta: bool,
@@ -22,8 +24,8 @@ impl DecoderBuilder {
     }
 }
 
-impl AnalyzerBuilder for DecoderBuilder {
-    fn build(&self, meta: &crate::ReplayMeta) -> Box<dyn Analyzer> {
+impl AnalyzerMutBuilder for DecoderBuilder {
+    fn build(&self, meta: &crate::ReplayMeta) -> Box<dyn AnalyzerMut> {
         let version = crate::version::Version::from_client_exe(&meta.clientVersionFromExe);
         let mut decoder = Decoder {
             silent: self.silent,
@@ -1162,10 +1164,10 @@ struct RawMinimapUpdate {
     is_disappearing: bool,
 }
 
-impl Analyzer for Decoder {
-    fn finish(&self) {}
+impl AnalyzerMut for Decoder {
+    fn finish(&mut self) {}
 
-    fn process(&mut self, packet: &Packet<'_, '_>) {
+    fn process_mut(&mut self, packet: &Packet<'_, '_>) {
         let decoded = DecodedPacket::from(&self.version, false, packet);
         //println!("{:#?}", decoded);
         //println!("{}", serde_json::to_string_pretty(&decoded).unwrap());

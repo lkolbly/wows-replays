@@ -773,10 +773,24 @@ impl<'argtype> Parser<'argtype> {
         ))
     }
 
-    pub fn parse_packets<'a, 'b, P: PacketProcessor>(
+    pub fn parse_packets_mut<'a, 'b, P: PacketProcessorMut>(
         &'b mut self,
         i: &'a [u8],
         p: &mut P,
+    ) -> Result<(), ErrorKind> {
+        let mut i = i;
+        while i.len() > 0 {
+            let (remaining, packet) = self.parse_packet(i)?;
+            i = remaining;
+            p.process_mut(packet);
+        }
+        Ok(())
+    }
+
+    pub fn parse_packets<'a, 'b, P: PacketProcessor>(
+        &'b mut self,
+        i: &'a [u8],
+        p: &P,
     ) -> Result<(), ErrorKind> {
         let mut i = i;
         while i.len() > 0 {
@@ -789,5 +803,8 @@ impl<'argtype> Parser<'argtype> {
 }
 
 pub trait PacketProcessor {
-    fn process(&mut self, packet: Packet<'_, '_>);
+    fn process(&self, packet: Packet<'_, '_>);
+}
+pub trait PacketProcessorMut {
+    fn process_mut(&mut self, packet: Packet<'_, '_>);
 }
