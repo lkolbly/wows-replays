@@ -8,4 +8,4 @@ pub mod summary;
 pub mod survey;
 //pub mod trails;
 
-pub use analyzer::{Analyzer, AnalyzerAdapter, AnalyzerBuilder};
+pub use analyzer::{Analyzer, AnalyzerAdapter, AnalyzerBuilder, AnalyzerMut, AnalyzerMutBuilder};

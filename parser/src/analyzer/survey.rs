@@ -1,6 +1,7 @@
 use crate::analyzer::*;
-use crate::packet2::Packet;
+use crate::packet2::{Entity, Packet};
 use std::cell::{RefCell, RefMut};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::analyzer::{AnalyzerMut, AnalyzerMutBuilder};

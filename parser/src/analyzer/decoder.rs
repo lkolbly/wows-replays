@@ -1,7 +1,8 @@
 use crate::analyzer::{Analyzer, AnalyzerBuilder};
-use crate::packet2::{EntityMethodPacket, Packet, PacketType};
-use crate::unpack_rpc_args;
+use crate::packet2::{Entity, EntityMethodPacket, Packet, PacketType};
+use crate::{unpack_rpc_args, ErrorKind, IResult};
 use modular_bitfield::prelude::*;
+use nom::number::complete::{le_f32, le_i32, le_u16, le_u32, le_u64, le_u8};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -56,7 +57,9 @@ pub enum VoiceLine {
     SetSmokeScreen,
     FollowMe,
     // TODO: definitely has associated data similar to AttentionToSquare
-    MapPointAttention,
+    /// World x and y coordinates corresponding to the map grid
+    /// MapPointQuickCommand in game code
+    MapPointAttention(f32, f32),
     UsingSubmarineLocator,
     /// "Provide anti-aircraft support"
     ProvideAntiAircraft,
@@ -66,10 +69,12 @@ pub enum VoiceLine {
     Retreat(Option<i32>),
 
     /// The position is (letter,number) and zero-indexed. e.g. F2 is (5,1)
-    AttentionToSquare((u32, u32)),
+    /// `RectangleAttentionCommand`` in game code
+    AttentionToSquare(u32, u32),
 
     /// Field is the avatar ID of the target
-    ConcentrateFire(i32),
+    /// Pair of the target type and target ID
+    QuickTactic(u16, u64),
 }
 
 /// Enumerates the ribbons which appear in the top-right
@@ -130,16 +135,16 @@ pub struct OnArenaStateReceivedPlayer {
     /// The player's clan
     pub clan: String,
     /// Their avatar ID in the game
-    pub avatarid: i64,
+    pub avatar_id: i64,
     /// Their ship ID in the game
-    pub shipid: i64,
-    /// Unknown
-    pub playerid: i64,
+    pub meta_ship_id: i64,
+    /// This player's entity created by a CreateEntity packet
+    pub entity_id: i64,
     //playeravatarid: i64,
     /// Which team they're on.
-    pub teamid: i64,
+    pub team_id: i64,
     /// Their starting health
-    pub health: i64,
+    pub max_health: i64,
 
     /// This is a raw dump (with the values converted to strings) of every key for the player.
     // TODO: Replace String with the actual pickle value (which is cleanly serializable)
@@ -362,10 +367,10 @@ pub enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
     /// Indicates that the battle has ended
     BattleEnd {
         /// The team ID of the winning team (corresponds to the teamid in [OnArenaStateReceivedPlayer])
-        winning_team: i8,
+        winning_team: Option<i8>,
         /// Unknown
         // TODO: Probably how the game was won? (time expired, score, or ships destroyed)
-        unknown: u8,
+        unknown: Option<u8>,
     },
     /// Sent when a consumable is activated
     Consumable {
@@ -474,6 +479,80 @@ fn try_convert_pickle_to_string(value: serde_pickle::value::Value) -> serde_pick
         ),
         value => value,
     }
+}
+
+fn parse_receive_common_cmd_blob(blob: &[u8]) -> IResult<&[u8], (VoiceLine, bool)> {
+    let i = blob;
+    let (i, line) = le_u16(i)?;
+    let (i, audience) = le_u8(i)?;
+
+    // if !matches!(line, 2 | 13 | 16 | 15 | 19) {
+    //     panic!("{:#X?}", blob);
+    // }
+
+    let is_global = match audience {
+        0 => false,
+        1 => true,
+        _ => {
+            panic!("Got unknown audience {}", audience);
+        }
+    };
+    let (i, message) = match line {
+        1 => {
+            let (i, x) = le_u16(i)?;
+            let (i, y) = le_u16(i)?;
+            (i, VoiceLine::AttentionToSquare(x as u32, y as u32))
+        }
+        2 => {
+            let (i, target_type) = le_u16(i)?;
+            let (i, target_id) = le_u64(i)?;
+            (i, VoiceLine::QuickTactic(target_type, target_id))
+        }
+        3 => (i, VoiceLine::RequestingSupport(None)),
+        // 4 is "QUICK_SOS"
+        // 5 is AYE_AYE
+        5 => (i, VoiceLine::Wilco),
+        // 6 is NO_WAY
+        6 => (i, VoiceLine::Negative),
+        // GOOD_GAME
+        7 => (i, VoiceLine::WellDone), // TODO: Find the corresponding field
+        // GOOD_LUCK
+        8 => (i, VoiceLine::FairWinds),
+        // CARAMBA
+        9 => (i, VoiceLine::Curses),
+        // 10 -> THANK_YOU
+        10 => (i, VoiceLine::DefendTheBase),
+        // 11 -> NEED_AIR_DEFENSE
+        11 => (i, VoiceLine::ProvideAntiAircraft),
+        // BACK
+        12 => {
+            panic!("{:#X?}", i);
+            //VoiceLine::Retreat(if b != 0 { Some(b as i32) } else { None })
+        }
+        // NEED_VISION
+        13 => (i, VoiceLine::IntelRequired),
+        // NEED_SMOKE
+        14 => (i, VoiceLine::SetSmokeScreen),
+        // RLS
+        15 => (i, VoiceLine::UsingRadar),
+        // SONAR
+        16 => (i, VoiceLine::UsingHydroSearch),
+        // FOLLOW_ME
+        17 => (i, VoiceLine::FollowMe),
+        // MAP_POINT_ATTENTION
+        18 => {
+            let (i, x) = le_f32(i)?;
+            let (i, y) = le_f32(i)?;
+            (i, VoiceLine::MapPointAttention(x, y))
+        }
+        //  SUBMARINE_LOCATOR
+        19 => (i, VoiceLine::UsingSubmarineLocator),
+        line => {
+            panic!("Unknown voice line {}, {:#X?}", line, i);
+        }
+    };
+
+    Ok((i, (message, is_global)))
 }
 
 impl<'replay, 'argtype, 'rawpacket> DecodedPacketPayload<'replay, 'argtype, 'rawpacket>
@@ -630,41 +709,62 @@ where
                 message: std::str::from_utf8(&message).unwrap(),
             }
         } else if *method == "receive_CommonCMD" {
-            let (audience, sender_id, line, a, b) = unpack_rpc_args!(args, u8, i32, u8, u32, u64);
+            let (sender_id, message, is_global) =
+                if version.is_at_least(&crate::version::Version::from_client_exe("0,12,8,0")) {
+                    let sender = *args[0]
+                        .int_32_ref()
+                        .expect("receive_CommonCMD: sender is not an i32");
 
-            let is_global = match audience {
-                0 => false,
-                1 => true,
-                _ => {
-                    panic!(
-                        "Got unknown audience {} sender=0x{:x} line={} a={:x} b={:x}",
-                        audience, sender_id, line, a, b
-                    );
-                }
-            };
-            let message = match line {
-                1 => VoiceLine::AttentionToSquare((a, b as u32)),
-                2 => VoiceLine::ConcentrateFire(b as i32),
-                3 => VoiceLine::RequestingSupport(None),
-                5 => VoiceLine::Wilco,
-                6 => VoiceLine::Negative,
-                7 => VoiceLine::WellDone, // TODO: Find the corresponding field
-                8 => VoiceLine::FairWinds,
-                9 => VoiceLine::Curses,
-                10 => VoiceLine::DefendTheBase,
-                11 => VoiceLine::ProvideAntiAircraft,
-                12 => VoiceLine::Retreat(if b != 0 { Some(b as i32) } else { None }),
-                13 => VoiceLine::IntelRequired,
-                14 => VoiceLine::SetSmokeScreen,
-                15 => VoiceLine::UsingRadar,
-                16 => VoiceLine::UsingHydroSearch,
-                17 => VoiceLine::FollowMe,
-                18 => VoiceLine::MapPointAttention,
-                19 => VoiceLine::UsingSubmarineLocator,
-                _ => {
-                    panic!("Unknown voice line {} a={:x} b={:x}!", line, a, b);
-                }
-            };
+                    let blob = args[1]
+                        .blob_ref()
+                        .expect("receive_CommonCMD: second argument is not a blob");
+
+                    let (_reminader, (message_type, is_global)) =
+                        parse_receive_common_cmd_blob(blob.as_ref())
+                            .expect("receive_CommonCMD: failed to parse blob");
+
+                    (sender, message_type, is_global)
+                } else {
+                    let (audience, sender_id, line, a, b) =
+                        unpack_rpc_args!(args, u8, i32, u8, u32, u64);
+                    let is_global = match audience {
+                        0 => false,
+                        1 => true,
+                        _ => {
+                            panic!(
+                                "Got unknown audience {} sender=0x{:x} line={} a={:x} b={:x}",
+                                audience, sender_id, line, a, b
+                            );
+                        }
+                    };
+                    let message = match line {
+                        1 => VoiceLine::AttentionToSquare(a, b as u32),
+                        2 => VoiceLine::QuickTactic(a as u16, b as u64),
+                        3 => VoiceLine::RequestingSupport(None),
+                        5 => VoiceLine::Wilco,
+                        6 => VoiceLine::Negative,
+                        7 => VoiceLine::WellDone, // TODO: Find the corresponding field
+                        8 => VoiceLine::FairWinds,
+                        9 => VoiceLine::Curses,
+                        10 => VoiceLine::DefendTheBase,
+                        11 => VoiceLine::ProvideAntiAircraft,
+                        12 => VoiceLine::Retreat(if b != 0 { Some(b as i32) } else { None }),
+                        13 => VoiceLine::IntelRequired,
+                        14 => VoiceLine::SetSmokeScreen,
+                        15 => VoiceLine::UsingRadar,
+                        16 => VoiceLine::UsingHydroSearch,
+                        17 => VoiceLine::FollowMe,
+                        18 => VoiceLine::MapPointAttention(a as f32, b as f32),
+                        19 => VoiceLine::UsingSubmarineLocator,
+                        _ => {
+                            panic!("Unknown voice line {} a={:x} b={:x}!", line, a, b);
+                        }
+                    };
+
+                    (sender_id, message, is_global)
+                };
+
+            // let (audience, sender_id, line, a, b) = unpack_rpc_args!(args, u8, i32, u8, u32, u64);
 
             DecodedPacketPayload::VoiceLine {
                 sender_id,
@@ -748,44 +848,87 @@ where
                     }
 
                     let keys: HashMap<&'static str, i64> = if version
+                        .is_at_least(&crate::version::Version::from_client_exe("0,12,8,0"))
+                    {
+                        let mut h = HashMap::new();
+                        h.insert("accountDBID", 0);
+                        h.insert("antiAbuseEnabled", 1);
+                        h.insert("avatarId", 2);
+                        h.insert("camouflageInfo", 3);
+                        h.insert("clanColor", 4);
+                        h.insert("clanID", 5);
+                        h.insert("clanTag", 6);
+                        h.insert("crewParams", 7);
+                        h.insert("dogTag", 8);
+                        h.insert("fragsCount", 9);
+                        h.insert("friendlyFireEnabled", 10);
+                        h.insert("id", 11);
+                        h.insert("invitationsEnabled", 12);
+                        h.insert("isAbuser", 13);
+                        h.insert("isAlive", 14);
+                        h.insert("isBot", 15);
+                        h.insert("isClientLoaded", 16);
+                        h.insert("isConnected", 17);
+                        h.insert("isHidden", 18);
+                        h.insert("isLeaver", 19);
+                        h.insert("isPreBattleOwner", 20);
+                        h.insert("isTShooter", 21);
+                        h.insert("keyTargetMarkers", 22);
+                        h.insert("killedBuildingsCount", 23);
+                        h.insert("maxHealth", 24);
+                        h.insert("name", 25);
+                        h.insert("playerMode", 26);
+                        h.insert("preBattleIdOnStart", 27);
+                        h.insert("preBattleSign", 28);
+                        h.insert("prebattleId", 29);
+                        h.insert("realm", 30);
+                        h.insert("shipComponents", 31);
+                        h.insert("shipConfigDump", 32);
+                        h.insert("shipId", 33);
+                        h.insert("shipParamsId", 34);
+                        h.insert("skinId", 35);
+                        h.insert("teamId", 36);
+                        h.insert("ttkStatus", 37);
+                        h
+                    } else if version
                         .is_at_least(&crate::version::Version::from_client_exe("0,10,9,0"))
                     {
                         // 0.10.9 inserted things at 0x1 and 0x1F
                         let mut h = HashMap::new();
-                        h.insert("avatarid", 0x2);
-                        h.insert("clan", 0x6);
-                        h.insert("health", 0x17);
-                        h.insert("username", 0x18);
-                        h.insert("shipid", 0x20);
-                        h.insert("playerid", 0x21);
-                        h.insert("playeravatarid", 0x22);
-                        h.insert("team", 0x23);
+                        h.insert("avatarId", 0x2);
+                        h.insert("clanTag", 0x6);
+                        h.insert("maxHealth", 0x17);
+                        h.insert("name", 0x18);
+                        h.insert("shipId", 0x20);
+                        h.insert("shipParamsId", 0x21);
+                        h.insert("skinId", 0x22);
+                        h.insert("teamId", 0x23);
                         h
                     } else if version
                         .is_at_least(&crate::version::Version::from_client_exe("0,10,7,0"))
                     {
                         // 0.10.7
                         let mut h = HashMap::new();
-                        h.insert("avatarid", 0x1);
-                        h.insert("clan", 0x5);
-                        h.insert("health", 0x16);
-                        h.insert("username", 0x17);
-                        h.insert("shipid", 0x1e);
-                        h.insert("playerid", 0x1f);
-                        h.insert("playeravatarid", 0x20);
-                        h.insert("team", 0x21);
+                        h.insert("avatarId", 0x1);
+                        h.insert("clanTag", 0x5);
+                        h.insert("maxHealth", 0x16);
+                        h.insert("name", 0x17);
+                        h.insert("shipId", 0x1e);
+                        h.insert("shipParamsId", 0x1f);
+                        h.insert("skinId", 0x20);
+                        h.insert("teamId", 0x21);
                         h
                     } else {
                         // 0.10.6 and earlier
                         let mut h = HashMap::new();
-                        h.insert("avatarid", 0x1);
-                        h.insert("clan", 0x5);
-                        h.insert("health", 0x15);
-                        h.insert("username", 0x16);
-                        h.insert("shipid", 0x1d);
-                        h.insert("playerid", 0x1e);
-                        h.insert("playeravatarid", 0x1f);
-                        h.insert("team", 0x20);
+                        h.insert("avatarId", 0x1);
+                        h.insert("clanTag", 0x5);
+                        h.insert("maxHealth", 0x15);
+                        h.insert("name", 0x16);
+                        h.insert("shipId", 0x1d);
+                        h.insert("shipParamsId", 0x1e);
+                        h.insert("skinId", 0x1f);
+                        h.insert("teamId", 0x20);
                         h
                     };
 
@@ -798,55 +941,70 @@ where
                     1e: Player ship ID
                     1f: Player ship ID (why does this appear twice?)
                     */
-                    let avatar = values.get(keys.get("avatarid").unwrap()).unwrap();
-                    let username = values.get(keys.get("username").unwrap()).unwrap();
-                    let username = match username {
-                        serde_pickle::value::Value::String(s) => s,
-                        _ => {
-                            panic!("{:?}", username);
-                        }
-                    };
-                    let clan = values.get(keys.get("clan").unwrap()).unwrap();
-                    let clan = match clan {
-                        serde_pickle::value::Value::String(s) => s.clone(),
-                        _ => {
-                            panic!("{:?}", clan);
-                        }
-                    };
-                    let shipid = values.get(keys.get("shipid").unwrap()).unwrap();
-                    let playerid = values.get(keys.get("playerid").unwrap()).unwrap();
-                    let _playeravatarid = values.get(keys.get("playeravatarid").unwrap()).unwrap();
-                    let team = values.get(keys.get("team").unwrap()).unwrap();
-                    let health = values.get(keys.get("health").unwrap()).unwrap();
+                    let avatar = *values
+                        .get(keys.get("avatarId").unwrap())
+                        .unwrap()
+                        .i64_ref()
+                        .expect("avatarId is not an i64");
+
+                    let username = values
+                        .get(keys.get("name").unwrap())
+                        .unwrap()
+                        .string_ref()
+                        .expect("name is not a string")
+                        .clone();
+
+                    let clan = values
+                        .get(keys.get("clanTag").unwrap())
+                        .unwrap()
+                        .string_ref()
+                        .expect("clanTag is not a string")
+                        .clone();
+
+                    let shipid = *values
+                        .get(keys.get("shipId").unwrap())
+                        .unwrap()
+                        .i64_ref()
+                        .expect("shipId is not an i64");
+                    let meta_ship_id = *values
+                        .get(keys.get("id").unwrap())
+                        .unwrap()
+                        .i64_ref()
+                        .expect("shipId is not an i64");
+                    let playerid = *values
+                        .get(keys.get("shipParamsId").unwrap())
+                        .unwrap()
+                        .i64_ref()
+                        .expect("shipParamsId is not an i64");
+                    let _playeravatarid = *values
+                        .get(keys.get("skinId").unwrap())
+                        .unwrap()
+                        .i64_ref()
+                        .expect("skinId is not an i64");
+                    let team = *values
+                        .get(keys.get("teamId").unwrap())
+                        .unwrap()
+                        .i64_ref()
+                        .expect("teamId is not an i64");
+                    let health = *values
+                        .get(keys.get("maxHealth").unwrap())
+                        .unwrap()
+                        .i64_ref()
+                        .expect("maxHealth is not an i64");
 
                     let mut raw = HashMap::new();
                     for (k, v) in values.iter() {
                         raw.insert(*k, format!("{:?}", v));
                     }
                     players_out.push(OnArenaStateReceivedPlayer {
-                        username: username.to_string(),
-                        clan: clan,
-                        avatarid: match avatar {
-                            serde_pickle::value::Value::I64(i) => *i,
-                            _ => panic!("foo"),
-                        },
-                        shipid: match shipid {
-                            serde_pickle::value::Value::I64(i) => *i,
-                            _ => panic!("foo"),
-                        },
-                        playerid: match playerid {
-                            serde_pickle::value::Value::I64(i) => *i,
-                            _ => panic!("foo"),
-                        },
-                        teamid: match team {
-                            serde_pickle::value::Value::I64(i) => *i,
-                            _ => panic!("foo"),
-                        },
-                        health: match health {
-                            serde_pickle::value::Value::I64(i) => *i,
-                            _ => panic!("foo"),
-                        },
-                        raw: raw,
+                        username,
+                        clan,
+                        avatar_id: avatar,
+                        meta_ship_id,
+                        entity_id: shipid,
+                        team_id: team,
+                        max_health: health,
+                        raw,
                     });
                 }
             }
@@ -1058,7 +1216,13 @@ where
                 arg1: args1,
             }
         } else if *method == "onBattleEnd" {
-            let (winning_team, unknown) = unpack_rpc_args!(args, i8, u8);
+            let (winning_team, unknown) =
+                if version.is_at_least(&crate::version::Version::from_client_exe("0,12,8,0")) {
+                    (None, None)
+                } else {
+                    let (winning_team, unknown) = unpack_rpc_args!(args, i8, u8);
+                    (Some(winning_team), Some(unknown))
+                };
             DecodedPacketPayload::BattleEnd {
                 winning_team,
                 unknown,

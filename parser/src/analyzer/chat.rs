@@ -1,6 +1,6 @@
 use crate::analyzer::decoder::{DecodedPacket, DecodedPacketPayload};
 use crate::analyzer::{Analyzer, AnalyzerBuilder};
-use crate::packet2::Packet;
+use crate::packet2::{Entity, Packet};
 use std::collections::HashMap;
 use std::convert::TryInto;
 
@@ -61,8 +61,10 @@ impl AnalyzerMut for ChatLogger {
             }
             DecodedPacketPayload::OnArenaStateReceived { players, .. } => {
                 for player in players.iter() {
-                    self.usernames
-                        .insert(player.avatarid.try_into().unwrap(), player.username.clone());
+                    self.usernames.insert(
+                        player.avatar_id.try_into().unwrap(),
+                        player.username.clone(),
+                    );
                 }
             }
             _ => {}

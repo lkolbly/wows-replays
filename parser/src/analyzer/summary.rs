@@ -1,5 +1,5 @@
 use crate::analyzer::*;
-use crate::packet2::{EntityMethodPacket, Packet, PacketType};
+use crate::packet2::{Entity, EntityMethodPacket, Packet, PacketType};
 use std::collections::HashMap;
 
 use super::analyzer::{AnalyzerMut, AnalyzerMutBuilder};

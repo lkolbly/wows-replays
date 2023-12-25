@@ -5,8 +5,6 @@ use serde::{Deserialize, Serialize};
 use strum_macros::{EnumString, IntoStaticStr};
 use variantly::Variantly;
 
-use crate::resource_loader::Vehicle;
-
 #[derive(Serialize, Deserialize, EnumString, Clone, Debug, Variantly, IntoStaticStr)]
 pub enum Species {
     AAircraft,
@@ -107,7 +105,7 @@ impl Species {
     }
 }
 
-#[derive(Serialize, Deserialize, Builder, Debug)]
+#[derive(Serialize, Deserialize, Builder, Debug, Clone)]
 pub struct Param {
     id: u32,
     index: String,
@@ -143,15 +141,291 @@ impl Param {
     }
 }
 
+#[derive(Serialize, Deserialize, EnumString, Hash, Debug, Variantly)]
+pub enum ParamType {
+    Ability,
+    Achievement,
+    AdjustmentShotActivator,
+    Aircraft,
+    BattleScript,
+    Building,
+    Campaign,
+    Catapult,
+    ClanSupply,
+    Collection,
+    Component,
+    Crew,
+    Director,
+    DogTag,
+    EventTrigger,
+    Exterior,
+    Finder,
+    Gun,
+    Modernization,
+    Other,
+    Projectile,
+    Radar,
+    RageModeProgressAction,
+    Reward,
+    RibbonActivator,
+    Sfx,
+    Ship,
+    SwitchTrigger,
+    SwitchVehicleVisualStateAction,
+    TimerActivator,
+    ToggleTriggerAction,
+    Unit,
+    VisibilityChangedActivator,
+}
+
+#[derive(Serialize, Deserialize, Clone, Builder, Debug)]
+pub struct Vehicle {
+    level: u32,
+    group: String,
+}
+
+impl Vehicle {
+    pub fn level(&self) -> u32 {
+        self.level
+    }
+
+    pub fn group(&self) -> &str {
+        self.group.as_ref()
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Builder, Debug)]
+pub struct CrewPersonalityShips {
+    groups: Vec<String>,
+    nation: Vec<String>,
+    peculiarity: Vec<String>,
+    ships: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Builder, Debug)]
+pub struct CrewPersonality {
+    can_reset_skills_for_free: bool,
+    cost_credits: usize,
+    cost_elite_xp: usize,
+    cost_gold: usize,
+    cost_xp: usize,
+    has_custom_background: bool,
+    has_overlay: bool,
+    has_rank: bool,
+    has_sample_voiceover: bool,
+    is_animated: bool,
+    is_person: bool,
+    is_retrainable: bool,
+    is_unique: bool,
+    peculiarity: String,
+    /// TODO: flags?
+    permissions: u32,
+    person_name: String,
+    ships: CrewPersonalityShips,
+    subnation: String,
+    tags: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Builder, Debug)]
+pub struct ConsumableReloadTimeModifier {
+    aircraft_carrier: f32,
+    auxiliary: f32,
+    battleship: f32,
+    cruiser: f32,
+    destroyer: f32,
+    submarine: f32,
+}
+
+impl ConsumableReloadTimeModifier {
+    pub fn get_for_species(&self, species: Species) -> f32 {
+        match species {
+            Species::AirCarrier => self.aircraft_carrier,
+            Species::Battleship => self.battleship,
+            Species::Cruiser => self.cruiser,
+            Species::Destroyer => self.destroyer,
+            Species::Submarine => self.submarine,
+            Species::Auxiliary => self.auxiliary,
+            other => panic!("Unexpected species {:?}", other),
+        }
+    }
+
+    pub fn aircraft_carrier(&self) -> f32 {
+        self.aircraft_carrier
+    }
+
+    pub fn auxiliary(&self) -> f32 {
+        self.auxiliary
+    }
+
+    pub fn battleship(&self) -> f32 {
+        self.battleship
+    }
+
+    pub fn cruiser(&self) -> f32 {
+        self.cruiser
+    }
+
+    pub fn destroyer(&self) -> f32 {
+        self.destroyer
+    }
+
+    pub fn submarine(&self) -> f32 {
+        self.submarine
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Builder, Debug)]
+pub struct CrewSkillModifier {
+    name: String,
+    aircraft_carrier: f32,
+    auxiliary: f32,
+    battleship: f32,
+    cruiser: f32,
+    destroyer: f32,
+    submarine: f32,
+}
+
+#[derive(Serialize, Deserialize, Clone, Builder, Debug)]
+pub struct CrewSkillLogicTrigger {
+    /// Sometimes this field isn't present?
+    burn_count: Option<usize>,
+    change_priority_target_penalty: f32,
+    consumable_type: String,
+    cooling_delay: f32,
+    /// TODO: figure out type
+    cooling_interpolator: Vec<()>,
+    divider_type: Option<String>,
+    divider_value: Option<f32>,
+    duration: f32,
+    energy_coeff: f32,
+    flood_count: Option<usize>,
+    health_factor: Option<f32>,
+    /// TODO: figure out type
+    heat_interpolator: Vec<()>,
+    modifiers: Option<Vec<CrewSkillModifier>>,
+    trigger_desc_ids: String,
+    trigger_type: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Builder, Debug)]
+pub struct CrewSkillTiers {
+    aircraft_carrier: usize,
+    auxiliary: usize,
+    battleship: usize,
+    cruiser: usize,
+    destroyer: usize,
+    submarine: usize,
+}
+
+impl CrewSkillTiers {
+    pub fn get_for_species(&self, species: Species) -> usize {
+        match species {
+            Species::AirCarrier => self.aircraft_carrier,
+            Species::Battleship => self.battleship,
+            Species::Cruiser => self.cruiser,
+            Species::Destroyer => self.destroyer,
+            Species::Submarine => self.submarine,
+            Species::Auxiliary => self.auxiliary,
+            other => panic!("Unexpected species {:?}", other),
+        }
+    }
+
+    pub fn aircraft_carrier(&self) -> usize {
+        self.aircraft_carrier
+    }
+
+    pub fn auxiliary(&self) -> usize {
+        self.auxiliary
+    }
+
+    pub fn battleship(&self) -> usize {
+        self.battleship
+    }
+
+    pub fn cruiser(&self) -> usize {
+        self.cruiser
+    }
+
+    pub fn destroyer(&self) -> usize {
+        self.destroyer
+    }
+
+    pub fn submarine(&self) -> usize {
+        self.submarine
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Builder, Debug)]
+pub struct CrewSkill {
+    name: String,
+    logic_trigger: CrewSkillLogicTrigger,
+    can_be_learned: bool,
+    is_epic: bool,
+    modifiers: Option<Vec<CrewSkillModifier>>,
+    skill_type: usize,
+    tier: CrewSkillTiers,
+    ui_treat_as_trigger: bool,
+}
+
+impl CrewSkill {
+    pub fn name(&self) -> &str {
+        self.name.as_ref()
+    }
+
+    pub fn logic_trigger(&self) -> &CrewSkillLogicTrigger {
+        &self.logic_trigger
+    }
+
+    pub fn can_be_learned(&self) -> bool {
+        self.can_be_learned
+    }
+
+    pub fn is_epic(&self) -> bool {
+        self.is_epic
+    }
+
+    pub fn modifiers(&self) -> Option<&Vec<CrewSkillModifier>> {
+        self.modifiers.as_ref()
+    }
+
+    pub fn skill_type(&self) -> usize {
+        self.skill_type
+    }
+
+    pub fn tier(&self) -> &CrewSkillTiers {
+        &self.tier
+    }
+
+    pub fn ui_treat_as_trigger(&self) -> bool {
+        self.ui_treat_as_trigger
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Builder, Debug)]
+pub struct Crew {
+    money_training_level: usize,
+    personality: CrewPersonality,
+    skills: Option<Vec<CrewSkill>>,
+}
+
+impl Crew {
+    pub fn skill_by_type(&self, typ: u32) -> Option<&CrewSkill> {
+        self.skills
+            .as_ref()
+            .and_then(|skills| skills.iter().find(|skill| skill.skill_type == typ as usize))
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Variantly)]
 pub enum ParamData {
     Vehicle(Vehicle),
+    Crew(Crew),
 }
 
 pub trait GameParamProvider {
-    fn by_id(&self, id: u32) -> Option<&Param>;
-    fn by_index(&self, index: &str) -> Option<&Param>;
-    fn by_name(&self, name: &str) -> Option<&Param>;
+    fn game_param_by_id(&self, id: u32) -> Option<Rc<Param>>;
+    fn game_param_by_index(&self, index: &str) -> Option<Rc<Param>>;
+    fn game_param_by_name(&self, name: &str) -> Option<Rc<Param>>;
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -166,16 +440,16 @@ pub struct GameParams {
 }
 
 impl GameParamProvider for GameParams {
-    fn by_id(&self, id: u32) -> Option<&Param> {
-        self.id_to_params.get(&id).map(Rc::as_ref)
+    fn game_param_by_id(&self, id: u32) -> Option<Rc<Param>> {
+        self.id_to_params.get(&id).cloned()
     }
 
-    fn by_index(&self, index: &str) -> Option<&Param> {
-        self.index_to_params.get(index).map(Rc::as_ref)
+    fn game_param_by_index(&self, index: &str) -> Option<Rc<Param>> {
+        self.index_to_params.get(index).cloned()
     }
 
-    fn by_name(&self, name: &str) -> Option<&Param> {
-        self.name_to_params.get(name).map(Rc::as_ref)
+    fn game_param_by_name(&self, name: &str) -> Option<Rc<Param>> {
+        self.name_to_params.get(name).cloned()
     }
 }
 

@@ -79,6 +79,7 @@ pub struct EntityMethodPacket<'argtype> {
 #[derive(Debug, Serialize)]
 pub struct EntityCreatePacket<'argtype> {
     pub entity_id: u32,
+    pub spec_idx: usize,
     pub entity_type: &'argtype str,
     pub space_id: u32,
     pub vehicle_id: u32,
@@ -212,18 +213,18 @@ pub struct Packet<'replay, 'argtype> {
 }
 
 #[derive(Debug)]
-struct Entity<'argtype> {
+pub struct Entity<'argtype> {
     entity_type: u16,
     properties: Vec<ArgValue<'argtype>>,
 }
 
 pub struct Parser<'argtype> {
-    specs: &'argtype Vec<EntitySpec>,
+    specs: &'argtype [EntitySpec],
     entities: HashMap<u32, Entity<'argtype>>,
 }
 
 impl<'argtype> Parser<'argtype> {
-    pub fn new(entities: &'argtype Vec<EntitySpec>) -> Parser {
+    pub fn new(entities: &'argtype [EntitySpec]) -> Parser {
         Parser {
             specs: entities,
             entities: HashMap::new(),
@@ -556,6 +557,7 @@ impl<'argtype> Parser<'argtype> {
             i,
             PacketType::EntityCreate(EntityCreatePacket {
                 entity_id,
+                spec_idx: entity_type as usize,
                 entity_type: &self.specs[entity_type as usize - 1].name,
                 space_id,
                 vehicle_id,
