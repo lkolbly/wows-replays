@@ -1,4 +1,5 @@
 use std::{
+    borrow::Borrow,
     cell::{Ref, RefCell},
     collections::HashMap,
     rc::Rc,
@@ -15,7 +16,7 @@ use variantly::Variantly;
 use crate::{
     analyzer::{
         analyzer::AnalyzerMut,
-        decoder::{DecodedPacket, DecoderBuilder, OnArenaStateReceivedPlayer},
+        decoder::{DamageReceived, DecodedPacket, DecoderBuilder, OnArenaStateReceivedPlayer},
         Analyzer,
     },
     game_params::{GameParamProvider, Param, ParamType, Vehicle},
@@ -286,14 +287,20 @@ impl BattleReport {
 
 type Id = u32;
 
+struct DamageEvent {
+    amount: f32,
+    victim: Id,
+}
+
 pub struct BattleController<'res, 'replay, G> {
     game_meta: &'replay ReplayMeta,
     game_resources: &'res G,
     metadata_players: Vec<SharedPlayer>,
     player_entities: HashMap<Id, Rc<Player>>,
-    entities: HashMap<Id, Entity>,
+    entities_by_id: HashMap<Id, Entity>,
     method_callbacks: HashMap<(ParamType, String), fn(&PacketType<'_, '_>)>,
     property_callbacks: HashMap<(ParamType, String), fn(&ArgValue<'_>)>,
+    damage_dealt: HashMap<u32, Vec<DamageEvent>>,
     event_handler: Option<Rc<dyn EventHandler>>,
     game_chat: Vec<GameMessage>,
     version: Version,
@@ -324,12 +331,13 @@ where
             game_resources,
             metadata_players: players,
             player_entities: HashMap::default(),
-            entities: Default::default(),
+            entities_by_id: Default::default(),
             method_callbacks: Default::default(),
             property_callbacks: Default::default(),
             event_handler: None,
             game_chat: Default::default(),
             version: crate::version::Version::from_client_exe(&game_meta.clientVersionFromExe),
+            damage_dealt: Default::default(),
         }
     }
 
@@ -494,13 +502,43 @@ where
     }
 
     fn handle_entity_create<'packet>(&mut self, packet: &EntityCreatePacket<'packet>) {
-        println!("\t {:#?}", packet);
-        if packet.entity_type != "Vehicle" {
-            return;
-        }
+        let entity_type = EntityType::from_str(packet.entity_type).unwrap_or_else(|_| {
+            panic!(
+                "failed to convert entity type {} to a string",
+                packet.entity_type
+            );
+        });
 
-        for (prop, arg) in packet.props.iter() {
-            self.update_property(packet.entity_id, prop, arg);
+        match entity_type {
+            EntityType::Vehicle => {
+                let mut props = VehicleProps::default();
+                props.update_from_args(&packet.props);
+
+                let player = self
+                    .player_entities
+                    .get(&packet.entity_id)
+                    .expect("player has not been created yet");
+
+                let captain_id = props.crew_modifiers_compact_params.params_id;
+                let captain = self
+                    .game_resources
+                    .game_param_by_id(captain_id)
+                    .expect("could not get player captain");
+
+                let vehicle = Rc::new(RefCell::new(VehicleEntity {
+                    id: packet.vehicle_id,
+                    player: Some(player.clone()),
+                    props,
+                    captain,
+                    damage: 0.0,
+                }));
+
+                self.entities_by_id
+                    .insert(packet.entity_id, Entity::Vehicle(vehicle.clone()));
+            }
+            EntityType::BattleLogic => eprintln!("BattleLogic create"),
+            EntityType::InteractiveZone => eprintln!("InteractiveZone create"),
+            EntityType::SmokeScreen => eprintln!("SmokeScreen create"),
         }
     }
 
@@ -508,14 +546,29 @@ where
         self.game_chat.as_slice()
     }
 
-    pub fn build_report(self) -> BattleReport {
+    pub fn build_report(mut self) -> BattleReport {
+        for (aggressor, damage_events) in &self.damage_dealt {
+            if let Some(aggressor_player) = self.entities_by_id.get_mut(&aggressor) {
+                let vehicle = aggressor_player
+                    .vehicle_ref()
+                    .expect("aggressor has no vehicle?");
+
+                vehicle.borrow_mut().damage +=
+                    damage_events.iter().fold(0.0, |mut accum, event| {
+                        accum += event.amount;
+                        accum
+                    });
+            }
+        }
+
         let player_entity_ids: Vec<_> = self.player_entities.keys().cloned().collect();
         let player_entities: Vec<Rc<VehicleEntity>> = self
-            .entities
+            .entities_by_id
             .iter()
             .filter_map(|(entity_id, entity)| {
                 if player_entity_ids.contains(entity_id) {
-                    entity.vehicle_ref().cloned()
+                    let vehicle: VehicleEntity = RefCell::borrow(entity.vehicle_ref()?).clone();
+                    Some(Rc::new(vehicle))
                 } else {
                     None
                 }
@@ -1275,6 +1328,7 @@ pub struct VehicleEntity {
     player: Option<Rc<Player>>,
     props: VehicleProps,
     captain: Rc<Param>,
+    damage: f32,
 }
 
 impl VehicleEntity {
@@ -1319,11 +1373,15 @@ impl VehicleEntity {
     pub fn captain(&self) -> &Param {
         self.captain.as_ref()
     }
+
+    pub fn damage(&self) -> f32 {
+        self.damage
+    }
 }
 
 #[derive(Debug, Variantly)]
 pub enum Entity {
-    Vehicle(Rc<VehicleEntity>),
+    Vehicle(Rc<RefCell<VehicleEntity>>),
 }
 
 impl<'res, 'replay, G> AnalyzerMut for BattleController<'res, 'replay, G>
@@ -1372,56 +1430,28 @@ where
                 eprintln!("ENTITY METHOD")
             }
             crate::analyzer::decoder::DecodedPacketPayload::BasePlayerCreate(base) => {
+                if base.entity_id == 529776 {
+                    panic!("{:?}", base.entity_id);
+                }
                 eprintln!("BASE PLAYER CREATE")
             }
-            crate::analyzer::decoder::DecodedPacketPayload::CellPlayerCreate(_) => {
+            crate::analyzer::decoder::DecodedPacketPayload::CellPlayerCreate(cell) => {
+                if cell.entity_id == 529776 {
+                    panic!("{:?}", cell.entity_id);
+                }
                 eprintln!("CELL PLAYER CREATE")
             }
-            crate::analyzer::decoder::DecodedPacketPayload::EntityEnter(_) => {
+            crate::analyzer::decoder::DecodedPacketPayload::EntityEnter(e) => {
+                if e.entity_id == 529776 {
+                    panic!("{:?}", e.entity_id);
+                }
                 eprintln!("ENTITY ENTER")
             }
             crate::analyzer::decoder::DecodedPacketPayload::EntityLeave(_) => {
                 eprintln!("ENTITY LEAVE")
             }
             crate::analyzer::decoder::DecodedPacketPayload::EntityCreate(entity_create) => {
-                let entity_type =
-                    EntityType::from_str(entity_create.entity_type).unwrap_or_else(|_| {
-                        panic!(
-                            "failed to convert entity type {} to a string",
-                            entity_create.entity_type
-                        );
-                    });
-
-                match entity_type {
-                    EntityType::Vehicle => {
-                        let mut props = VehicleProps::default();
-                        props.update_from_args(&entity_create.props);
-
-                        let player = self
-                            .player_entities
-                            .get(&entity_create.entity_id)
-                            .expect("player has not been created yet");
-
-                        let captain_id = props.crew_modifiers_compact_params.params_id;
-                        let captain = self
-                            .game_resources
-                            .game_param_by_id(captain_id)
-                            .expect("could not get player captain");
-
-                        self.entities.insert(
-                            entity_create.entity_id,
-                            Entity::Vehicle(Rc::new(VehicleEntity {
-                                id: entity_create.vehicle_id,
-                                player: Some(player.clone()),
-                                props,
-                                captain,
-                            })),
-                        );
-                    }
-                    EntityType::BattleLogic => eprintln!("BattleLogic create"),
-                    EntityType::InteractiveZone => eprintln!("InteractiveZone create"),
-                    EntityType::SmokeScreen => eprintln!("SmokeScreen create"),
-                }
+                self.handle_entity_create(entity_create);
             }
             crate::analyzer::decoder::DecodedPacketPayload::OnArenaStateReceived {
                 arg0,
@@ -1449,7 +1479,17 @@ where
             crate::analyzer::decoder::DecodedPacketPayload::DamageReceived {
                 victim,
                 aggressors,
-            } => eprintln!("DAMAGE RECEIVED"),
+            } => {
+                for damage in aggressors {
+                    self.damage_dealt
+                        .entry(damage.aggressor as u32)
+                        .or_default()
+                        .push(DamageEvent {
+                            amount: damage.damage,
+                            victim,
+                        });
+                }
+            }
             crate::analyzer::decoder::DecodedPacketPayload::MinimapUpdate { updates, arg1 } => {
                 eprintln!("MINIMAP UPDATE")
             }

@@ -155,30 +155,30 @@ pub struct OnArenaStateReceivedPlayer {
 #[derive(Debug, Clone, Serialize)]
 pub struct DamageReceived {
     /// Ship ID of the aggressor
-    aggressor: i32,
+    pub aggressor: i32,
     /// Amount of damage dealt
-    damage: f32,
+    pub damage: f32,
 }
 
 /// Sent to update the minimap display
 #[derive(Debug, Clone, Serialize)]
 pub struct MinimapUpdate {
     /// The ship ID of the ship to update
-    entity_id: i32,
+    pub entity_id: i32,
     /// Set to true if the ship should disappear from the minimap (false otherwise)
-    disappearing: bool,
+    pub disappearing: bool,
     /// The heading of the ship. Unit is degrees, 0 is up, positive is clockwise
     /// (so 90.0 is East)
-    heading: f32,
+    pub heading: f32,
 
     /// Zero is the left edge of the map, 1.0 is the right edge
-    x: f32,
+    pub x: f32,
 
     /// Zero is the bottom edge of the map, 1.0 is the top edge
-    y: f32,
+    pub y: f32,
 
     /// Unknown, but this appears to be something related to the big hunt
-    unknown: bool,
+    pub unknown: bool,
 }
 
 /// Enumerates usable consumables in-game
