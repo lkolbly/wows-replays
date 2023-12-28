@@ -9,6 +9,7 @@ use std::{
 use derive_builder::Builder;
 use nom::{multi::count, number::complete::le_u32, sequence::pair};
 use serde::{Deserialize, Serialize};
+use serde_pickle::{HashableValue, Value};
 use strum::ParseError;
 use strum_macros::EnumString;
 use variantly::Variantly;
@@ -16,7 +17,10 @@ use variantly::Variantly;
 use crate::{
     analyzer::{
         analyzer::AnalyzerMut,
-        decoder::{DamageReceived, DecodedPacket, DecoderBuilder, OnArenaStateReceivedPlayer},
+        decoder::{
+            ChatMessageExtra, DamageReceived, DecodedPacket, DecoderBuilder,
+            OnArenaStateReceivedPlayer,
+        },
         Analyzer,
     },
     game_params::{CrewSkill, GameParamProvider, Param, ParamType, Vehicle},
@@ -383,6 +387,7 @@ where
         sender_id: i32,
         audience: &str,
         message: &str,
+        extra_data: Option<ChatMessageExtra>,
     ) {
         let channel = match audience {
             "battle_common" => ChatChannel::Global,
@@ -404,8 +409,8 @@ where
         if sender_team.is_none() {
             eprintln!("{:#?}", self.entities_by_id.keys());
             panic!(
-                "{:?} {:?}, {:?}, {:?}",
-                entity_id, sender_id, audience, message
+                "{:?} {:?}, {:?}, {:?}, {:?}",
+                entity_id, sender_id, audience, message, extra_data
             );
         }
         let message = GameMessage {
@@ -1356,8 +1361,9 @@ where
                 sender_id,
                 audience,
                 message,
+                extra_data,
             } => {
-                self.handle_chat_message(entity_id, sender_id, audience, message);
+                self.handle_chat_message(entity_id, sender_id, audience, message, extra_data);
             }
             crate::analyzer::decoder::DecodedPacketPayload::VoiceLine {
                 sender_id,
@@ -1390,18 +1396,18 @@ where
                 eprintln!("ENTITY METHOD")
             }
             crate::analyzer::decoder::DecodedPacketPayload::BasePlayerCreate(base) => {
-                if base.entity_id == 597199 {
-                    panic!("{:#?}", base);
-                }
+                // if base.entity_id == 597199 {
+                //     panic!("{:#?}", base);
+                // }
                 if base.entity_id == 529776 {
                     panic!("{:?}", base.entity_id);
                 }
                 eprintln!("BASE PLAYER CREATE")
             }
             crate::analyzer::decoder::DecodedPacketPayload::CellPlayerCreate(cell) => {
-                if cell.entity_id == 597199 {
-                    panic!("{:#?}", cell);
-                }
+                // if cell.entity_id == 597199 {
+                //     panic!("{:#?}", cell);
+                // }
                 if cell.entity_id == 529776 {
                     panic!("{:?}", cell.entity_id);
                 }

@@ -4,8 +4,10 @@ use crate::{unpack_rpc_args, ErrorKind, IResult};
 use modular_bitfield::prelude::*;
 use nom::number::complete::{le_f32, le_i32, le_u16, le_u32, le_u64, le_u8};
 use serde::Serialize;
+use serde_pickle::Value;
 use std::collections::HashMap;
 use std::convert::TryInto;
+use std::iter::FromIterator;
 
 use super::analyzer::{AnalyzerMut, AnalyzerMutBuilder};
 
@@ -244,6 +246,16 @@ pub enum CruiseState {
 }
 
 #[derive(Debug, Serialize)]
+pub struct ChatMessageExtra {
+    pre_battle_sign: i64,
+    pre_battle_id: i64,
+    player_clan_tag: String,
+    typ: i64,
+    player_avatar_id: i64,
+    player_name: String,
+}
+
+#[derive(Debug, Serialize)]
 pub enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
     /// Represents a chat message. Note that this only includes text chats, voicelines
     /// are represented by the VoiceLine variant.
@@ -255,6 +267,8 @@ pub enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
         audience: &'replay str,
         /// The actual chat message.
         message: &'replay str,
+        /// Extra data that may be present if sender_id is 0
+        extra_data: Option<ChatMessageExtra>,
     },
     /// Sent when a voice line is played (for example, "Wilco!")
     VoiceLine {
@@ -710,11 +724,88 @@ where
                 crate::rpc::typedefs::ArgValue::Int32(i) => i,
                 _ => panic!("foo"),
             };
+            let mut extra_data = None;
+            if *sender_id == 0 && args.len() >= 4 {
+                let extra = serde_pickle::de::value_from_slice(
+                    args[3].string_ref().expect("failed"),
+                    serde_pickle::de::DeOptions::new(),
+                )
+                .expect("value is not pickled");
+                let mut extra_dict: HashMap<String, Value> = HashMap::from_iter(
+                    extra
+                        .dict()
+                        .expect("value is not a dictionary")
+                        .into_iter()
+                        .map(|(key, value)| {
+                            let key = match key {
+                                serde_pickle::HashableValue::Bytes(bytes) => {
+                                    String::from_utf8(bytes)
+                                        .expect("key is not a valid utf-8 sequence")
+                                }
+                                serde_pickle::HashableValue::String(string) => string,
+                                other => {
+                                    panic!("unexpected key type {:?}", other)
+                                }
+                            };
+
+                            let value = match value {
+                                Value::Bytes(bytes) => {
+                                    if let Ok(result) = String::from_utf8(bytes.clone()) {
+                                        Value::String(result)
+                                    } else {
+                                        Value::Bytes(bytes)
+                                    }
+                                }
+                                other => other,
+                            };
+
+                            (key, value)
+                        }),
+                );
+
+                let extra = ChatMessageExtra {
+                    pre_battle_sign: extra_dict
+                        .remove("preBattleSign")
+                        .unwrap()
+                        .i64()
+                        .expect("preBattleSign is not an i64"),
+                    pre_battle_id: extra_dict
+                        .remove("preBattleId")
+                        .unwrap()
+                        .i64()
+                        .expect("preBattleId is not an i64"),
+                    player_clan_tag: extra_dict
+                        .remove("playerClanTag")
+                        .unwrap()
+                        .string()
+                        .expect("playerClanTag is not a string"),
+                    typ: extra_dict
+                        .remove("type")
+                        .unwrap()
+                        .i64()
+                        .expect("type is not an i64"),
+                    player_avatar_id: extra_dict
+                        .remove("playerAvatarId")
+                        .unwrap()
+                        .i64()
+                        .expect("playerAvatarId is not an i64"),
+                    player_name: extra_dict
+                        .remove("playerName")
+                        .unwrap()
+                        .string()
+                        .expect("playerName is not a string"),
+                };
+
+                assert!(extra_dict.is_empty());
+
+                extra_data = Some(extra);
+            }
             DecodedPacketPayload::Chat {
                 entity_id: *entity_id,
                 sender_id: *sender_id,
                 audience: std::str::from_utf8(&target).unwrap(),
                 message: std::str::from_utf8(&message).unwrap(),
+                extra_data,
             }
         } else if *method == "receive_CommonCMD" {
             let (sender_id, message, is_global) =
