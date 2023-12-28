@@ -195,6 +195,29 @@ impl Vehicle {
 }
 
 #[derive(Serialize, Deserialize, Clone, Builder, Debug)]
+pub struct AbilityCategory {
+    special_sound_id: String,
+    consumable_type: String,
+    description_id: String,
+    group: String,
+    icon_id: String,
+    num_consumables: isize,
+    preparation_time: f32,
+    reload_time: f32,
+    title_id: String,
+    work_time: f32,
+}
+
+#[derive(Serialize, Deserialize, Clone, Builder, Debug)]
+pub struct Ability {
+    can_buy: bool,
+    cost_credits: isize,
+    cost_gold: isize,
+    is_free: bool,
+    categories: HashMap<String, AbilityCategory>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Builder, Debug)]
 pub struct CrewPersonalityShips {
     groups: Vec<String>,
     nation: Vec<String>,
@@ -420,6 +443,7 @@ impl Crew {
 pub enum ParamData {
     Vehicle(Vehicle),
     Crew(Crew),
+    Ability(Ability),
 }
 
 pub trait GameParamProvider {

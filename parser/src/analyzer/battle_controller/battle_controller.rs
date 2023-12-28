@@ -19,7 +19,7 @@ use crate::{
         decoder::{DamageReceived, DecodedPacket, DecoderBuilder, OnArenaStateReceivedPlayer},
         Analyzer,
     },
-    game_params::{GameParamProvider, Param, ParamType, Vehicle},
+    game_params::{CrewSkill, GameParamProvider, Param, ParamType, Vehicle},
     packet2::{
         EntityCreatePacket, EntityMethodPacket, EntityPropertyPacket, Packet, PacketProcessor,
         PacketProcessorMut, PacketType, PacketTypeKind,
@@ -1260,7 +1260,44 @@ impl VehicleEntity {
         self.props.crew_modifiers_compact_params.params_id
     }
 
-    pub fn commander_skills(&self) -> &[u8] {
+    pub fn commander_skills(&self) -> Vec<&CrewSkill> {
+        let vehicle_species = self
+            .player
+            .as_ref()
+            .expect("player has not yet loaded")
+            .vehicle
+            .species()
+            .expect("vehicle species not set");
+
+        let skills = &self.props.crew_modifiers_compact_params.learned_skills;
+        let skills_for_species = match vehicle_species {
+            crate::game_params::Species::AirCarrier => skills.aircraft_carrier.as_slice(),
+            crate::game_params::Species::Battleship => skills.battleship.as_slice(),
+            crate::game_params::Species::Cruiser => skills.cruiser.as_slice(),
+            crate::game_params::Species::Destroyer => skills.destroyer.as_slice(),
+            crate::game_params::Species::Submarine => skills.submarine.as_slice(),
+            other => {
+                panic!("Unexpected vehicle species: {:?}", other);
+            }
+        };
+
+        let captain = self
+            .captain()
+            .data()
+            .crew_ref()
+            .expect("captain is not a crew?");
+
+        skills_for_species
+            .iter()
+            .map(|skill_type| {
+                captain
+                    .skill_by_type(*skill_type as u32)
+                    .expect("could not get skill type")
+            })
+            .collect()
+    }
+
+    pub fn commander_skills_raw(&self) -> &[u8] {
         let vehicle_species = self
             .player
             .as_ref()
