@@ -239,6 +239,8 @@ pub enum xEntityType {
 
 #[derive(Debug, Clone, Copy, EnumString)]
 pub enum EntityType {
+    Building,
+    BattleEntity,
     BattleLogic,
     Vehicle,
     InteractiveZone,
@@ -399,6 +401,13 @@ where
 
         println!("chat message from sender {sender_name} in channel {channel:?}: {message}");
 
+        if sender_team.is_none() {
+            eprintln!("{:#?}", self.entities_by_id.keys());
+            panic!(
+                "{:?} {:?}, {:?}, {:?}",
+                entity_id, sender_id, audience, message
+            );
+        }
         let message = GameMessage {
             sender_relation: sender_team.unwrap(),
             sender_name,
@@ -451,6 +460,8 @@ where
             EntityType::BattleLogic => eprintln!("BattleLogic create"),
             EntityType::InteractiveZone => eprintln!("InteractiveZone create"),
             EntityType::SmokeScreen => eprintln!("SmokeScreen create"),
+            EntityType::BattleEntity => eprintln!("BattleEntity create"),
+            EntityType::Building => eprintln!("Building create"),
         }
     }
 
@@ -1379,18 +1390,27 @@ where
                 eprintln!("ENTITY METHOD")
             }
             crate::analyzer::decoder::DecodedPacketPayload::BasePlayerCreate(base) => {
+                if base.entity_id == 597199 {
+                    panic!("{:#?}", base);
+                }
                 if base.entity_id == 529776 {
                     panic!("{:?}", base.entity_id);
                 }
                 eprintln!("BASE PLAYER CREATE")
             }
             crate::analyzer::decoder::DecodedPacketPayload::CellPlayerCreate(cell) => {
+                if cell.entity_id == 597199 {
+                    panic!("{:#?}", cell);
+                }
                 if cell.entity_id == 529776 {
                     panic!("{:?}", cell.entity_id);
                 }
                 eprintln!("CELL PLAYER CREATE")
             }
             crate::analyzer::decoder::DecodedPacketPayload::EntityEnter(e) => {
+                if e.entity_id == 597199 {
+                    panic!("{:#?}", e);
+                }
                 if e.entity_id == 529776 {
                     panic!("{:?}", e.entity_id);
                 }

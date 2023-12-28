@@ -526,8 +526,16 @@ fn parse_receive_common_cmd_blob(blob: &[u8]) -> IResult<&[u8], (VoiceLine, bool
         11 => (i, VoiceLine::ProvideAntiAircraft),
         // BACK
         12 => {
-            panic!("{:#X?}", i);
-            //VoiceLine::Retreat(if b != 0 { Some(b as i32) } else { None })
+            let (i, target_type) = le_u16(i)?;
+            let (i, target_id) = le_u64(i)?;
+            (
+                i,
+                VoiceLine::Retreat(if target_id != 0 {
+                    Some(target_id as i32)
+                } else {
+                    None
+                }),
+            )
         }
         // NEED_VISION
         13 => (i, VoiceLine::IntelRequired),

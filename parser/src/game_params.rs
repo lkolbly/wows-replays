@@ -178,6 +178,12 @@ pub enum ParamType {
     VisibilityChangedActivator,
 }
 
+// #[derive(Serialize, Deserialize, Clone, Builder, Debug)]
+// pub struct VehicleAbility {
+//     typ: String,
+
+// }
+
 #[derive(Serialize, Deserialize, Clone, Builder, Debug)]
 pub struct Vehicle {
     level: u32,
