@@ -770,7 +770,7 @@ where
                         .i64()
                         .expect("preBattleSign is not an i64"),
                     pre_battle_id: extra_dict
-                        .remove("preBattleId")
+                        .remove("prebattleId")
                         .unwrap()
                         .i64()
                         .expect("preBattleId is not an i64"),

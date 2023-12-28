@@ -389,6 +389,10 @@ where
         message: &str,
         extra_data: Option<ChatMessageExtra>,
     ) {
+        if sender_id == 0 {
+            return;
+        }
+
         let channel = match audience {
             "battle_common" => ChatChannel::Global,
             "battle_team" => ChatChannel::Team,
@@ -406,13 +410,6 @@ where
 
         println!("chat message from sender {sender_name} in channel {channel:?}: {message}");
 
-        if sender_team.is_none() {
-            eprintln!("{:#?}", self.entities_by_id.keys());
-            panic!(
-                "{:?} {:?}, {:?}, {:?}, {:?}",
-                entity_id, sender_id, audience, message, extra_data
-            );
-        }
         let message = GameMessage {
             sender_relation: sender_team.unwrap(),
             sender_name,
