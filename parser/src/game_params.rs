@@ -5,7 +5,20 @@ use serde::{Deserialize, Serialize};
 use strum_macros::{EnumString, IntoStaticStr};
 use variantly::Variantly;
 
-#[derive(Serialize, Deserialize, EnumString, Clone, Debug, Variantly, IntoStaticStr)]
+#[derive(
+    Serialize,
+    Deserialize,
+    EnumString,
+    Clone,
+    Debug,
+    Variantly,
+    IntoStaticStr,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+)]
 pub enum Species {
     AAircraft,
     AbilitiesUnit,
