@@ -188,6 +188,7 @@ pub enum ParamType {
 pub struct Vehicle {
     level: u32,
     group: String,
+    abilities: Vec<Vec<(String, String)>>,
 }
 
 impl Vehicle {
@@ -450,6 +451,9 @@ pub enum ParamData {
     Vehicle(Vehicle),
     Crew(Crew),
     Ability(Ability),
+    Modernization,
+    Exterior,
+    Unit,
 }
 
 pub trait GameParamProvider {
