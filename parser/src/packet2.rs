@@ -108,21 +108,22 @@ pub struct InvalidPacket<'a> {
 }
 
 #[derive(Debug, Serialize)]
-pub struct BasePlayerCreatePacket<'replay, 'argtype> {
+pub struct BasePlayerCreatePacket<'argtype> {
     pub entity_id: u32,
     pub entity_type: &'argtype str,
-    pub state: &'replay [u8],
+    pub props: HashMap<&'argtype str, crate::rpc::typedefs::ArgValue<'argtype>>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct CellPlayerCreatePacket<'replay> {
+pub struct CellPlayerCreatePacket<'argtype> {
     pub entity_id: u32,
+    pub entity_type: &'argtype str,
     pub space_id: u32,
     pub unknown: u16,
     pub vehicle_id: u32,
     pub position: Vec3,
     pub rotation: Rot3,
-    pub value: &'replay [u8],
+    pub props: HashMap<&'argtype str, crate::rpc::typedefs::ArgValue<'argtype>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -181,8 +182,8 @@ pub struct MapPacket<'replay> {
 #[derive(Debug, Serialize, Kinded)]
 pub enum PacketType<'replay, 'argtype> {
     Position(PositionPacket),
-    BasePlayerCreate(BasePlayerCreatePacket<'replay, 'argtype>),
-    CellPlayerCreate(CellPlayerCreatePacket<'replay>),
+    BasePlayerCreate(BasePlayerCreatePacket<'argtype>),
+    CellPlayerCreate(CellPlayerCreatePacket<'argtype>),
     EntityEnter(EntityEnterPacket),
     EntityLeave(EntityLeavePacket),
     EntityCreate(EntityCreatePacket<'argtype>),
@@ -485,14 +486,41 @@ impl<'argtype> Parser<'argtype> {
     ) -> IResult<&'a [u8], PacketType<'a, 'b>> {
         let (i, entity_id) = le_u32(i)?;
         let (i, entity_type) = le_u16(i)?;
-        let (i, state) = take(i.len())(i)?;
         let spec = &self.specs[entity_type as usize - 1];
+
+        let mut i = i;
+        let mut props: HashMap<&str, _> = HashMap::new();
+        let mut stored_props: Vec<_> = vec![];
+        for prop_id in 0..spec.base_properties.len() {
+            let spec = &spec.base_properties[prop_id as usize];
+            let (new_i, value) = match spec.prop_type.parse_value(i) {
+                Ok(x) => x,
+                Err(e) => {
+                    panic!("ERROR");
+                    return Err(failure_from_kind(crate::ErrorKind::UnableToParseRpcValue {
+                        method: format!("BasePlayerCreate::{}", spec.name),
+                        argnum: prop_id as usize,
+                        argtype: format!("{:?}", spec),
+                        packet: i.to_vec(),
+                        error: format!("{:?}", e),
+                    }));
+                }
+            };
+            i = new_i;
+            stored_props.push(value.clone());
+            props.insert(&spec.name, value);
+        }
+
+        eprintln!("BasePlayerCreate props: {:?}", props);
+
+        //assert!(i.is_empty());
+
         self.entities.insert(
             entity_id,
             Entity {
                 entity_type,
                 // TODO: Parse the state
-                properties: vec![],
+                properties: stored_props,
             },
         );
         Ok((
@@ -500,7 +528,7 @@ impl<'argtype> Parser<'argtype> {
             PacketType::BasePlayerCreate(BasePlayerCreatePacket {
                 entity_id,
                 entity_type: &spec.name,
-                state,
+                props,
             }),
         ))
     }
@@ -579,8 +607,8 @@ impl<'argtype> Parser<'argtype> {
         let (i, vehicle_id) = le_u32(i)?;
         let (i, position) = Vec3::parse(i)?;
         let (i, rotation) = Rot3::parse(i)?;
-        let (i, vlen) = le_u32(i)?;
-        let (i, value) = take(vlen)(i)?;
+        let (i, props_len) = le_u32(i)?;
+        let (i, props_data) = take(props_len)(i)?;
 
         if !self.entities.contains_key(&entity_id) {
             panic!(
@@ -606,29 +634,41 @@ impl<'argtype> Parser<'argtype> {
         );*/
         let entity_type = self.entities.get(&entity_id).unwrap().entity_type;
         let spec = &self.specs[entity_type as usize - 1];
-        let mut value = value;
-        let mut prop_values = vec![];
-        for property in spec.internal_properties.iter() {
-            //println!("{}: {}", idx, property.name);
-            //println!("{:#?}", property.prop_type);
-            //println!("{:?}", value);
-            let (new_value, prop_value) = property.prop_type.parse_value(value).unwrap();
-            //println!("{:?}", prop_value);
-            value = new_value;
-            prop_values.push(prop_value);
+
+        let mut i = props_data;
+        let mut props: HashMap<&str, _> = HashMap::new();
+        let mut stored_props: Vec<_> = vec![];
+        for prop_id in 0..spec.internal_properties.len() {
+            let spec = &spec.internal_properties[prop_id as usize];
+            let (new_i, value) = match spec.prop_type.parse_value(i) {
+                Ok(x) => x,
+                Err(e) => {
+                    panic!("ERROR");
+                    return Err(failure_from_kind(crate::ErrorKind::UnableToParseRpcValue {
+                        method: format!("CellPlayerCreate::{}", spec.name),
+                        argnum: prop_id as usize,
+                        argtype: format!("{:?}", spec),
+                        packet: i.to_vec(),
+                        error: format!("{:?}", e),
+                    }));
+                }
+            };
+            i = new_i;
+            stored_props.push(value.clone());
+            props.insert(&spec.name, value);
         }
-        //println!("CellPlayerCreate properties: {:?}", prop_values);
 
         Ok((
             i,
             PacketType::CellPlayerCreate(CellPlayerCreatePacket {
                 entity_id,
+                entity_type: &spec.name,
                 vehicle_id,
                 space_id,
                 position,
                 rotation,
                 unknown: 5,
-                value,
+                props,
             }),
         ))
     }

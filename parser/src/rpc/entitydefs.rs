@@ -82,6 +82,7 @@ pub struct EntitySpec {
     pub client_methods: Vec<Method>,
     pub properties: Vec<Property>,
     pub internal_properties: Vec<Property>,
+    pub base_properties: Vec<Property>,
 }
 
 fn child_by_name<'a, 'b>(
@@ -363,7 +364,7 @@ pub fn parse_scripts(
             EntityFlags.CELL_PUBLIC_AND_OWN |
             EntityFlags.ALL_CLIENTS
         */
-        let internal_properties = properties
+        let mut internal_properties: Vec<_> = properties
             .iter()
             .filter(|property| {
                 property.flags == Flags::AllClients
@@ -373,6 +374,16 @@ pub fn parse_scripts(
             })
             .map(|property| (*property).clone())
             .collect();
+
+        //internal_properties.sort_by_key(|prop| prop.prop_type.sort_size());
+
+        let mut base_properties: Vec<_> = properties
+            .iter()
+            .filter(|property| property.flags == Flags::BaseAndClient)
+            .map(|property| (*property).clone())
+            .collect();
+
+        //base_properties.sort_by_key(|prop| prop.prop_type.sort_size());
 
         properties = properties
             .iter()
@@ -402,6 +413,7 @@ pub fn parse_scripts(
             client_methods,
             properties,
             internal_properties,
+            base_properties,
         });
     }
 

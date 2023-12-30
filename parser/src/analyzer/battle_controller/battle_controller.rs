@@ -437,20 +437,22 @@ where
                 let mut props = VehicleProps::default();
                 props.update_from_args(&packet.props);
 
-                let player = self
-                    .player_entities
-                    .get(&packet.entity_id)
-                    .expect("player has not been created yet");
+                let player = self.player_entities.get(&packet.entity_id);
 
                 let captain_id = props.crew_modifiers_compact_params.params_id;
-                let captain = self
-                    .game_resources
-                    .game_param_by_id(captain_id)
-                    .expect("could not get player captain");
+                let captain = if captain_id != 0 {
+                    Some(
+                        self.game_resources
+                            .game_param_by_id(captain_id)
+                            .expect("failed to get captain"),
+                    )
+                } else {
+                    None
+                };
 
                 let vehicle = Rc::new(RefCell::new(VehicleEntity {
                     id: packet.vehicle_id,
-                    player: Some(player.clone()),
+                    player: player.cloned(),
                     props,
                     captain,
                     damage: 0.0,
@@ -1252,7 +1254,7 @@ pub struct VehicleEntity {
     id: u32,
     player: Option<Rc<Player>>,
     props: VehicleProps,
-    captain: Rc<Param>,
+    captain: Option<Rc<Param>>,
     damage: f32,
 }
 
@@ -1273,7 +1275,7 @@ impl VehicleEntity {
         self.props.crew_modifiers_compact_params.params_id
     }
 
-    pub fn commander_skills(&self) -> Vec<&CrewSkill> {
+    pub fn commander_skills(&self) -> Option<Vec<&CrewSkill>> {
         let vehicle_species = self
             .player
             .as_ref()
@@ -1295,19 +1297,21 @@ impl VehicleEntity {
         };
 
         let captain = self
-            .captain()
+            .captain()?
             .data()
             .crew_ref()
             .expect("captain is not a crew?");
 
-        skills_for_species
+        let skills = skills_for_species
             .iter()
             .map(|skill_type| {
                 captain
                     .skill_by_type(*skill_type as u32)
                     .expect("could not get skill type")
             })
-            .collect()
+            .collect();
+
+        Some(skills)
     }
 
     pub fn commander_skills_raw(&self) -> &[u8] {
@@ -1332,8 +1336,8 @@ impl VehicleEntity {
         }
     }
 
-    pub fn captain(&self) -> &Param {
-        self.captain.as_ref()
+    pub fn captain(&self) -> Option<&Param> {
+        self.captain.as_ref().map(|rc| rc.as_ref())
     }
 
     pub fn damage(&self) -> f32 {
@@ -1344,6 +1348,16 @@ impl VehicleEntity {
 #[derive(Debug, Variantly)]
 pub enum Entity {
     Vehicle(Rc<RefCell<VehicleEntity>>),
+}
+
+impl Entity {
+    fn update_arena_player(&self, arena_player: Rc<Player>) {
+        match self {
+            Entity::Vehicle(vehicle) => {
+                RefCell::borrow_mut(&*vehicle).player = Some(arena_player);
+            }
+        }
+    }
 }
 
 impl<'res, 'replay, G> AnalyzerMut for BattleController<'res, 'replay, G>
@@ -1396,22 +1410,41 @@ where
                 // if base.entity_id == 597199 {
                 //     panic!("{:#?}", base);
                 // }
-                if base.entity_id == 529776 {
-                    panic!("{:?}", base.entity_id);
+                if base.entity_id == 425091 {
+                    panic!("{:?}", base);
                 }
-                eprintln!("BASE PLAYER CREATE")
+                eprintln!("BASE PLAYER CREATE");
+                if base.entity_type == "Vehicle" {
+                    panic!("VEHICLE: {:#?}", base);
+                }
             }
             crate::analyzer::decoder::DecodedPacketPayload::CellPlayerCreate(cell) => {
                 // if cell.entity_id == 597199 {
                 //     panic!("{:#?}", cell);
                 // }
-                if cell.entity_id == 529776 {
-                    panic!("{:?}", cell.entity_id);
+                if cell.entity_id == 425091 {
+                    panic!("{:?}", cell);
                 }
-                eprintln!("CELL PLAYER CREATE")
+                // let metadata_player = self
+                //     .metadata_players
+                //     .iter()
+                //     .find(|meta_player| meta_player.id == cell.vehicle_id as u32)
+                //     .expect("could not map arena player to metadata player");
+                // let battle_player = Player::from_arena_player(
+                //     player,
+                //     metadata_player.as_ref(),
+                //     self.game_resources,
+                // );
+
+                // self.player_entities
+                //     .insert(battle_player.entity_id, Rc::new(battle_player));
+                eprintln!("CELL PLAYER CREATE");
+                if cell.entity_type == "Vehicle" {
+                    panic!("VEHICLE: {:#?}", cell);
+                }
             }
             crate::analyzer::decoder::DecodedPacketPayload::EntityEnter(e) => {
-                if e.entity_id == 597199 {
+                if e.entity_id == 425091 {
                     panic!("{:#?}", e);
                 }
                 if e.entity_id == 529776 {
@@ -1437,14 +1470,18 @@ where
                         .iter()
                         .find(|meta_player| meta_player.id == player.meta_ship_id as u32)
                         .expect("could not map arena player to metadata player");
-                    let battle_player = Player::from_arena_player(
+                    let battle_player = Rc::new(Player::from_arena_player(
                         player,
                         metadata_player.as_ref(),
                         self.game_resources,
-                    );
+                    ));
 
                     self.player_entities
-                        .insert(battle_player.entity_id, Rc::new(battle_player));
+                        .insert(battle_player.entity_id, battle_player.clone());
+
+                    if let Some(entity) = self.entities_by_id.get(&battle_player.entity_id) {
+                        entity.update_arena_player(battle_player);
+                    }
                 }
             }
             crate::analyzer::decoder::DecodedPacketPayload::CheckPing(_) => eprintln!("CHECK PING"),
@@ -1465,8 +1502,10 @@ where
             crate::analyzer::decoder::DecodedPacketPayload::MinimapUpdate { updates, arg1 } => {
                 eprintln!("MINIMAP UPDATE")
             }
-            crate::analyzer::decoder::DecodedPacketPayload::PropertyUpdate(_) => {
-                eprintln!("PROPERTY UPDATE")
+            crate::analyzer::decoder::DecodedPacketPayload::PropertyUpdate(update) => {
+                if let Some(entity) = self.entities_by_id.get(&(update.entity_id as u32)) {
+                    //panic!("{:#?}", update);
+                }
             }
             crate::analyzer::decoder::DecodedPacketPayload::BattleEnd {
                 winning_team,
