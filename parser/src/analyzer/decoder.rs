@@ -136,6 +136,10 @@ pub struct OnArenaStateReceivedPlayer {
     pub username: String,
     /// The player's clan
     pub clan: String,
+    /// The player's DB ID (unique player ID)
+    pub db_id: i64,
+    /// The realm this player belongs to
+    pub realm: String,
     /// Their avatar ID in the game
     pub avatar_id: i64,
     /// Their ship ID in the game
@@ -1091,6 +1095,20 @@ where
                         .i64_ref()
                         .expect("maxHealth is not an i64");
 
+                    let realm = values
+                        .get(keys.get("realm").unwrap())
+                        .unwrap()
+                        .string_ref()
+                        .cloned()
+                        .expect("maxHealth is not an i64");
+
+                    let db_id = values
+                        .get(keys.get("accountDBID").unwrap())
+                        .unwrap()
+                        .i64_ref()
+                        .cloned()
+                        .expect("accountDBID is not an i64");
+
                     let mut raw = HashMap::new();
                     for (k, v) in values.iter() {
                         raw.insert(*k, format!("{:?}", v));
@@ -1098,6 +1116,8 @@ where
                     players_out.push(OnArenaStateReceivedPlayer {
                         username,
                         clan,
+                        realm,
+                        db_id,
                         avatar_id: avatar,
                         meta_ship_id,
                         entity_id: shipid,

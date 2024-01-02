@@ -122,6 +122,8 @@ impl ShipLoadout {
 pub struct Player {
     name: String,
     clan: String,
+    realm: String,
+    db_id: i64,
     relation: u32,
     avatar_id: u32,
     ship_id: u32,
@@ -140,6 +142,8 @@ impl Player {
         let OnArenaStateReceivedPlayer {
             username,
             clan,
+            realm,
+            db_id,
             avatar_id: avatarid,
             meta_ship_id: shipid,
             entity_id,
@@ -151,6 +155,8 @@ impl Player {
         Player {
             name: username.clone(),
             clan: clan.clone(),
+            realm: realm.clone(),
+            db_id: *db_id,
             avatar_id: *avatarid as u32,
             ship_id: *shipid as u32,
             entity_id: *entity_id as u32,
@@ -197,6 +203,14 @@ impl Player {
 
     pub fn vehicle(&self) -> &Param {
         self.vehicle.as_ref()
+    }
+
+    pub fn realm(&self) -> &str {
+        self.realm.as_ref()
+    }
+
+    pub fn db_id(&self) -> i64 {
+        self.db_id
     }
 }
 
