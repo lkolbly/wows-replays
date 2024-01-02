@@ -4,6 +4,7 @@ use std::{
     collections::HashMap,
     rc::Rc,
     str::FromStr,
+    time::Duration,
 };
 
 use derive_builder::Builder;
@@ -18,7 +19,7 @@ use crate::{
     analyzer::{
         analyzer::AnalyzerMut,
         decoder::{
-            ChatMessageExtra, DamageReceived, DecodedPacket, DecoderBuilder,
+            ChatMessageExtra, DamageReceived, DeathCause, DecodedPacket, DecoderBuilder,
             OnArenaStateReceivedPlayer,
         },
         Analyzer,
@@ -321,6 +322,7 @@ pub struct BattleController<'res, 'replay, G> {
     method_callbacks: HashMap<(ParamType, String), fn(&PacketType<'_, '_>)>,
     property_callbacks: HashMap<(ParamType, String), fn(&ArgValue<'_>)>,
     damage_dealt: HashMap<u32, Vec<DamageEvent>>,
+    frags: HashMap<u32, Vec<Death>>,
     event_handler: Option<Rc<dyn EventHandler>>,
     game_chat: Vec<GameMessage>,
     version: Version,
@@ -358,6 +360,7 @@ where
             game_chat: Default::default(),
             version: crate::version::Version::from_client_exe(&game_meta.clientVersionFromExe),
             damage_dealt: Default::default(),
+            frags: Default::default(),
         }
     }
 
@@ -446,6 +449,10 @@ where
             );
         });
 
+        if packet.entity_id == 831749 {
+            panic!("{:#?}", packet);
+        }
+
         match entity_type {
             EntityType::Vehicle => {
                 let mut props = VehicleProps::default();
@@ -465,11 +472,12 @@ where
                 };
 
                 let vehicle = Rc::new(RefCell::new(VehicleEntity {
-                    id: packet.vehicle_id,
+                    id: packet.entity_id,
                     player: player.cloned(),
                     props,
                     captain,
                     damage: 0.0,
+                    death_info: None,
                 }));
 
                 self.entities_by_id
@@ -494,13 +502,33 @@ where
                     .vehicle_ref()
                     .expect("aggressor has no vehicle?");
 
-                vehicle.borrow_mut().damage +=
-                    damage_events.iter().fold(0.0, |mut accum, event| {
-                        accum += event.amount;
-                        accum
-                    });
+                let mut vehicle = vehicle.borrow_mut();
+                vehicle.damage += damage_events.iter().fold(0.0, |mut accum, event| {
+                    accum += event.amount;
+                    accum
+                });
+            } else {
+                // panic!("unknown aggressor {:?}?", *aggressor);
             }
         }
+
+        self.entities_by_id.values().for_each(|entity| {
+            if let Some(vehicle) = entity.vehicle_ref() {
+                let mut vehicle = vehicle.borrow_mut();
+
+                if let Some(death) = self
+                    .frags
+                    .values()
+                    .find_map(|deaths| deaths.iter().find(|death| death.victim == vehicle.id))
+                {
+                    vehicle.death_info = Some(DeathInfo {
+                        time_lived: death.timestamp,
+                        killer: death.killer,
+                        cause: death.cause,
+                    })
+                }
+            }
+        });
 
         let player_entity_ids: Vec<_> = self.player_entities.keys().cloned().collect();
         let player_entities: Vec<Rc<VehicleEntity>> = self
@@ -1264,12 +1292,34 @@ impl UpdateFromReplayArgs for VehicleProps {
 }
 
 #[derive(Debug, Clone)]
+pub struct DeathInfo {
+    time_lived: Duration,
+    killer: u32,
+    cause: DeathCause,
+}
+
+impl DeathInfo {
+    pub fn time_lived(&self) -> Duration {
+        self.time_lived
+    }
+
+    pub fn killer(&self) -> u32 {
+        self.killer
+    }
+
+    pub fn cause(&self) -> DeathCause {
+        self.cause
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct VehicleEntity {
     id: u32,
     player: Option<Rc<Player>>,
     props: VehicleProps,
     captain: Option<Rc<Param>>,
     damage: f32,
+    death_info: Option<DeathInfo>,
 }
 
 impl VehicleEntity {
@@ -1357,6 +1407,10 @@ impl VehicleEntity {
     pub fn damage(&self) -> f32 {
         self.damage
     }
+
+    pub fn death_info(&self) -> Option<&DeathInfo> {
+        self.death_info.as_ref()
+    }
 }
 
 #[derive(Debug, Variantly)]
@@ -1372,6 +1426,14 @@ impl Entity {
             }
         }
     }
+}
+
+#[derive(Debug)]
+struct Death {
+    timestamp: Duration,
+    killer: u32,
+    victim: u32,
+    cause: DeathCause,
 }
 
 impl<'res, 'replay, G> AnalyzerMut for BattleController<'res, 'replay, G>
@@ -1413,7 +1475,14 @@ where
                 killer,
                 victim,
                 cause,
-            } => eprintln!("SHIP DESTROYED"),
+            } => {
+                self.frags.entry(killer as u32).or_default().push(Death {
+                    timestamp: Duration::from_secs_f32(packet.clock),
+                    killer: killer as u32,
+                    victim: victim as u32,
+                    cause,
+                });
+            }
             crate::analyzer::decoder::DecodedPacketPayload::EntityMethod(_) => {
                 eprintln!("ENTITY METHOD")
             }
@@ -1431,6 +1500,9 @@ where
                 if base.entity_type == "Vehicle" {
                     panic!("VEHICLE: {:#?}", base);
                 }
+                if base.entity_id == 831749 {
+                    panic!("{:#?}", packet);
+                }
             }
             crate::analyzer::decoder::DecodedPacketPayload::CellPlayerCreate(cell) => {
                 // if cell.entity_id == 597199 {
@@ -1438,6 +1510,9 @@ where
                 // }
                 if cell.entity_id == 425091 {
                     panic!("{:?}", cell);
+                }
+                if cell.entity_id == 831749 {
+                    panic!("{:#?}", packet);
                 }
                 // let metadata_player = self
                 //     .metadata_players
