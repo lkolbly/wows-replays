@@ -1492,30 +1492,9 @@ where
                 eprintln!("ENTITY METHOD")
             }
             crate::analyzer::decoder::DecodedPacketPayload::BasePlayerCreate(base) => {
-                // if base.entity_id == 597199 {
-                //     panic!("{:#?}", base);
-                // }
-                if base.entity_id == 425091 {
-                    panic!("{:?}", base);
-                }
                 eprintln!("BASE PLAYER CREATE");
-                if base.entity_type == "Vehicle" {
-                    panic!("VEHICLE: {:#?}", base);
-                }
-                if base.entity_id == 831749 {
-                    panic!("{:#?}", packet);
-                }
             }
             crate::analyzer::decoder::DecodedPacketPayload::CellPlayerCreate(cell) => {
-                // if cell.entity_id == 597199 {
-                //     panic!("{:#?}", cell);
-                // }
-                if cell.entity_id == 425091 {
-                    panic!("{:?}", cell);
-                }
-                if cell.entity_id == 831749 {
-                    panic!("{:#?}", packet);
-                }
                 // let metadata_player = self
                 //     .metadata_players
                 //     .iter()
@@ -1530,17 +1509,8 @@ where
                 // self.player_entities
                 //     .insert(battle_player.entity_id, Rc::new(battle_player));
                 eprintln!("CELL PLAYER CREATE");
-                if cell.entity_type == "Vehicle" {
-                    panic!("VEHICLE: {:#?}", cell);
-                }
             }
             crate::analyzer::decoder::DecodedPacketPayload::EntityEnter(e) => {
-                if e.entity_id == 425091 {
-                    panic!("{:#?}", e);
-                }
-                if e.entity_id == 529776 {
-                    panic!("{:?}", e.entity_id);
-                }
                 eprintln!("ENTITY ENTER")
             }
             crate::analyzer::decoder::DecodedPacketPayload::EntityLeave(_) => {
