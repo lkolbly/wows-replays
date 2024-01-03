@@ -15,6 +15,8 @@ use strum::ParseError;
 use strum_macros::EnumString;
 use variantly::Variantly;
 
+static TIME_UNTIL_GAME_START: Duration = Duration::from_secs(30);
+
 use crate::{
     analyzer::{
         analyzer::AnalyzerMut,
@@ -522,7 +524,7 @@ where
                     .find_map(|deaths| deaths.iter().find(|death| death.victim == vehicle.id))
                 {
                     vehicle.death_info = Some(DeathInfo {
-                        time_lived: death.timestamp,
+                        time_lived: death.timestamp - TIME_UNTIL_GAME_START,
                         killer: death.killer,
                         cause: death.cause,
                     })
