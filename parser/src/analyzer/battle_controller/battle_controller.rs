@@ -9,8 +9,8 @@ use std::{
 
 use derive_builder::Builder;
 use nom::{multi::count, number::complete::le_u32, sequence::pair};
+use pickled::{HashableValue, Value};
 use serde::{Deserialize, Serialize};
-use serde_pickle::{HashableValue, Value};
 use strum::ParseError;
 use strum_macros::EnumString;
 use variantly::Variantly;

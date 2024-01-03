@@ -124,28 +124,28 @@ impl AnalyzerMut for Summary {
                         *self.ribbons.get_mut(&ribbon).unwrap() += 1;
                     }
                 } else if *method == "receiveDamageStat" {
-                    let value = serde_pickle::de::value_from_slice(
+                    let value = pickled::de::value_from_slice(
                         match &args[0] {
                             crate::rpc::typedefs::ArgValue::Blob(x) => x,
                             _ => panic!("foo"),
                         },
-                        serde_pickle::de::DeOptions::new(),
+                        pickled::de::DeOptions::new(),
                     )
                     .unwrap();
 
                     match value {
-                        serde_pickle::value::Value::Dict(d) => {
+                        pickled::value::Value::Dict(d) => {
                             for (k, v) in d.iter() {
                                 let k = match k {
-                                    serde_pickle::value::HashableValue::Tuple(t) => {
+                                    pickled::value::HashableValue::Tuple(t) => {
                                         assert!(t.len() == 2);
                                         (
                                             match t[0] {
-                                                serde_pickle::value::HashableValue::I64(i) => i,
+                                                pickled::value::HashableValue::I64(i) => i,
                                                 _ => panic!("foo"),
                                             },
                                             match t[1] {
-                                                serde_pickle::value::HashableValue::I64(i) => i,
+                                                pickled::value::HashableValue::I64(i) => i,
                                                 _ => panic!("foo"),
                                             },
                                         )
@@ -153,18 +153,18 @@ impl AnalyzerMut for Summary {
                                     _ => panic!("foo"),
                                 };
                                 let v = match v {
-                                    serde_pickle::value::Value::List(t) => {
+                                    pickled::value::Value::List(t) => {
                                         assert!(t.len() == 2);
                                         (
                                             match t[0] {
-                                                serde_pickle::value::Value::I64(i) => i,
+                                                pickled::value::Value::I64(i) => i,
                                                 _ => panic!("foo"),
                                             },
                                             match t[1] {
-                                                serde_pickle::value::Value::F64(i) => i,
+                                                pickled::value::Value::F64(i) => i,
                                                 // TODO: This appears in the (17,2) key,
                                                 // it is unknown what it means
-                                                serde_pickle::value::Value::I64(i) => i as f64,
+                                                pickled::value::Value::I64(i) => i as f64,
                                                 _ => panic!("foo"),
                                             },
                                         )

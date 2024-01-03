@@ -208,9 +208,9 @@ impl<'argtype> serde::Serialize for ArgValue<'argtype> {
             Self::UnicodeString(s) => serializer.serialize_bytes(&s),
             Self::Blob(blob) => {
                 // TODO: Determine when we can/can't pickle-decode this
-                // Also, make serde_pickle::Value implement Serialize
+                // Also, make pickled::Value implement Serialize
                 let decoded: Result<serde_json::Value, _> =
-                    serde_pickle::from_slice(blob, serde_pickle::de::DeOptions::new());
+                    pickled::from_slice(blob, pickled::de::DeOptions::new());
                 match decoded {
                     Ok(v) => {
                         //let x: serde_json::Value = v.try_into().unwrap();

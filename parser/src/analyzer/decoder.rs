@@ -3,8 +3,8 @@ use crate::packet2::{Entity, EntityMethodPacket, Packet, PacketType};
 use crate::{unpack_rpc_args, ErrorKind, IResult};
 use modular_bitfield::prelude::*;
 use nom::number::complete::{le_f32, le_i32, le_u16, le_u32, le_u64, le_u8};
+use pickled::Value;
 use serde::Serialize;
-use serde_pickle::Value;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::iter::FromIterator;
@@ -430,62 +430,60 @@ pub enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
 }
 
 fn try_convert_hashable_pickle_to_string(
-    value: serde_pickle::value::HashableValue,
-) -> serde_pickle::value::HashableValue {
+    value: pickled::value::HashableValue,
+) -> pickled::value::HashableValue {
     match value {
-        serde_pickle::value::HashableValue::Bytes(b) => {
+        pickled::value::HashableValue::Bytes(b) => {
             if let Ok(s) = std::str::from_utf8(&b) {
-                serde_pickle::value::HashableValue::String(s.to_owned())
+                pickled::value::HashableValue::String(s.to_owned())
             } else {
-                serde_pickle::value::HashableValue::Bytes(b)
+                pickled::value::HashableValue::Bytes(b)
             }
         }
-        serde_pickle::value::HashableValue::Tuple(t) => serde_pickle::value::HashableValue::Tuple(
+        pickled::value::HashableValue::Tuple(t) => pickled::value::HashableValue::Tuple(
             t.into_iter()
                 .map(|item| try_convert_hashable_pickle_to_string(item))
                 .collect(),
         ),
-        serde_pickle::value::HashableValue::FrozenSet(s) => {
-            serde_pickle::value::HashableValue::FrozenSet(
-                s.into_iter()
-                    .map(|item| try_convert_hashable_pickle_to_string(item))
-                    .collect(),
-            )
-        }
+        pickled::value::HashableValue::FrozenSet(s) => pickled::value::HashableValue::FrozenSet(
+            s.into_iter()
+                .map(|item| try_convert_hashable_pickle_to_string(item))
+                .collect(),
+        ),
         value => value,
     }
 }
 
-fn try_convert_pickle_to_string(value: serde_pickle::value::Value) -> serde_pickle::value::Value {
+fn try_convert_pickle_to_string(value: pickled::value::Value) -> pickled::value::Value {
     match value {
-        serde_pickle::value::Value::Bytes(b) => {
+        pickled::value::Value::Bytes(b) => {
             if let Ok(s) = std::str::from_utf8(&b) {
-                serde_pickle::value::Value::String(s.to_owned())
+                pickled::value::Value::String(s.to_owned())
             } else {
-                serde_pickle::value::Value::Bytes(b)
+                pickled::value::Value::Bytes(b)
             }
         }
-        serde_pickle::value::Value::List(l) => serde_pickle::value::Value::List(
+        pickled::value::Value::List(l) => pickled::value::Value::List(
             l.into_iter()
                 .map(|item| try_convert_pickle_to_string(item))
                 .collect(),
         ),
-        serde_pickle::value::Value::Tuple(t) => serde_pickle::value::Value::Tuple(
+        pickled::value::Value::Tuple(t) => pickled::value::Value::Tuple(
             t.into_iter()
                 .map(|item| try_convert_pickle_to_string(item))
                 .collect(),
         ),
-        serde_pickle::value::Value::Set(s) => serde_pickle::value::Value::Set(
+        pickled::value::Value::Set(s) => pickled::value::Value::Set(
             s.into_iter()
                 .map(|item| try_convert_hashable_pickle_to_string(item))
                 .collect(),
         ),
-        serde_pickle::value::Value::FrozenSet(s) => serde_pickle::value::Value::FrozenSet(
+        pickled::value::Value::FrozenSet(s) => pickled::value::Value::FrozenSet(
             s.into_iter()
                 .map(|item| try_convert_hashable_pickle_to_string(item))
                 .collect(),
         ),
-        serde_pickle::value::Value::Dict(d) => serde_pickle::value::Value::Dict(
+        pickled::value::Value::Dict(d) => pickled::value::Value::Dict(
             d.into_iter()
                 .map(|(k, v)| {
                     (
@@ -730,9 +728,9 @@ where
             };
             let mut extra_data = None;
             if *sender_id == 0 && args.len() >= 4 {
-                let extra = serde_pickle::de::value_from_slice(
+                let extra = pickled::de::value_from_slice(
                     args[3].string_ref().expect("failed"),
-                    serde_pickle::de::DeOptions::new(),
+                    pickled::de::DeOptions::new(),
                 )
                 .expect("value is not pickled");
                 let mut extra_dict: HashMap<String, Value> = HashMap::from_iter(
@@ -742,11 +740,9 @@ where
                         .into_iter()
                         .map(|(key, value)| {
                             let key = match key {
-                                serde_pickle::HashableValue::Bytes(bytes) => {
-                                    String::from_utf8(bytes)
-                                        .expect("key is not a valid utf-8 sequence")
-                                }
-                                serde_pickle::HashableValue::String(string) => string,
+                                pickled::HashableValue::Bytes(bytes) => String::from_utf8(bytes)
+                                    .expect("key is not a valid utf-8 sequence"),
+                                pickled::HashableValue::String(string) => string,
                                 other => {
                                     panic!("unexpected key type {:?}", other)
                                 }
@@ -877,37 +873,37 @@ where
         } else if *method == "onArenaStateReceived" {
             let (arg0, arg1) = unpack_rpc_args!(args, i64, i8);
 
-            let value = serde_pickle::de::value_from_slice(
+            let value = pickled::de::value_from_slice(
                 match &args[2] {
                     crate::rpc::typedefs::ArgValue::Blob(x) => x,
                     _ => panic!("foo"),
                 },
-                serde_pickle::de::DeOptions::new(),
+                pickled::de::DeOptions::new(),
             )
             .unwrap();
 
             let value = match value {
-                serde_pickle::value::Value::Dict(d) => d,
+                pickled::value::Value::Dict(d) => d,
                 _ => panic!(),
             };
             let mut arg2 = HashMap::new();
             for (k, v) in value.iter() {
                 let k = match k {
-                    serde_pickle::value::HashableValue::I64(i) => *i,
+                    pickled::value::HashableValue::I64(i) => *i,
                     _ => panic!(),
                 };
                 let v = match v {
-                    serde_pickle::value::Value::List(l) => l,
+                    pickled::value::Value::List(l) => l,
                     _ => panic!(),
                 };
                 let v: Vec<_> = v
                     .iter()
                     .map(|elem| match elem {
-                        serde_pickle::value::Value::Dict(d) => Some(
+                        pickled::value::Value::Dict(d) => Some(
                             d.iter()
                                 .map(|(k, v)| {
                                     let k = match k {
-                                        serde_pickle::value::HashableValue::Bytes(b) => {
+                                        pickled::value::HashableValue::Bytes(b) => {
                                             std::str::from_utf8(b).unwrap().to_string()
                                         }
                                         _ => panic!(),
@@ -917,32 +913,32 @@ where
                                 })
                                 .collect(),
                         ),
-                        serde_pickle::value::Value::None => None,
+                        pickled::value::Value::None => None,
                         _ => panic!(),
                     })
                     .collect();
                 arg2.insert(k, v);
             }
 
-            let value = serde_pickle::de::value_from_slice(
+            let value = pickled::de::value_from_slice(
                 match &args[3] {
                     crate::rpc::typedefs::ArgValue::Blob(x) => x,
                     _ => panic!("foo"),
                 },
-                serde_pickle::de::DeOptions::new(),
+                pickled::de::DeOptions::new(),
             )
             .unwrap();
             let value = try_convert_pickle_to_string(value);
 
             let mut players_out = vec![];
-            if let serde_pickle::value::Value::List(players) = &value {
+            if let pickled::value::Value::List(players) = &value {
                 for player in players.iter() {
                     let mut values = HashMap::new();
-                    if let serde_pickle::value::Value::List(elements) = player {
+                    if let pickled::value::Value::List(elements) = player {
                         for elem in elements.iter() {
-                            if let serde_pickle::value::Value::Tuple(kv) = elem {
+                            if let pickled::value::Value::Tuple(kv) = elem {
                                 let key = match kv[0] {
-                                    serde_pickle::value::Value::I64(key) => key,
+                                    pickled::value::Value::I64(key) => key,
                                     _ => panic!(),
                                 };
                                 values.insert(key, kv[1].clone());
@@ -1134,29 +1130,29 @@ where
                 players: players_out,
             }
         } else if *method == "receiveDamageStat" {
-            let value = serde_pickle::de::value_from_slice(
+            let value = pickled::de::value_from_slice(
                 match &args[0] {
                     crate::rpc::typedefs::ArgValue::Blob(x) => x,
                     _ => panic!("foo"),
                 },
-                serde_pickle::de::DeOptions::new(),
+                pickled::de::DeOptions::new(),
             )
             .unwrap();
 
             let mut stats = vec![];
             match value {
-                serde_pickle::value::Value::Dict(d) => {
+                pickled::value::Value::Dict(d) => {
                     for (k, v) in d.iter() {
                         let k = match k {
-                            serde_pickle::value::HashableValue::Tuple(t) => {
+                            pickled::value::HashableValue::Tuple(t) => {
                                 assert!(t.len() == 2);
                                 (
                                     match t[0] {
-                                        serde_pickle::value::HashableValue::I64(i) => i,
+                                        pickled::value::HashableValue::I64(i) => i,
                                         _ => panic!("foo"),
                                     },
                                     match t[1] {
-                                        serde_pickle::value::HashableValue::I64(i) => i,
+                                        pickled::value::HashableValue::I64(i) => i,
                                         _ => panic!("foo"),
                                     },
                                 )
@@ -1164,18 +1160,18 @@ where
                             _ => panic!("foo"),
                         };
                         let v = match v {
-                            serde_pickle::value::Value::List(t) => {
+                            pickled::value::Value::List(t) => {
                                 assert!(t.len() == 2);
                                 (
                                     match t[0] {
-                                        serde_pickle::value::Value::I64(i) => i,
+                                        pickled::value::Value::I64(i) => i,
                                         _ => panic!("foo"),
                                     },
                                     match t[1] {
-                                        serde_pickle::value::Value::F64(i) => i,
+                                        pickled::value::Value::F64(i) => i,
                                         // TODO: This appears in the (17,2) key,
                                         // it is unknown what it means
-                                        serde_pickle::value::Value::I64(i) => i as f64,
+                                        pickled::value::Value::I64(i) => i as f64,
                                         _ => panic!("foo"),
                                     },
                                 )

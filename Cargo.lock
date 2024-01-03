@@ -422,6 +422,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "pickled"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c01521ef80e2ff9bc52e7142be1dd7664391168f076f620373eaaf913a9cd211"
+dependencies = [
+ "byteorder",
+ "iter-read",
+ "num-bigint",
+ "num-traits",
+ "serde",
+ "variantly",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.70"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -605,19 +619,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25dd9975e68d0cb5aa1120c288333fc98731bd1dd12f561e468ea4728c042b89"
 dependencies = [
  "serde_derive",
-]
-
-[[package]]
-name = "serde-pickle"
-version = "1.1.1"
-source = "git+https://github.com/landaire/serde-pickle#2e02192aff04f1f01ec7b67bc384e7a70aec88f6"
-dependencies = [
- "byteorder",
- "iter-read",
- "num-bigint",
- "num-traits",
- "serde",
- "variantly",
 ]
 
 [[package]]
@@ -848,11 +849,11 @@ dependencies = [
  "kinded",
  "modular-bitfield",
  "nom",
+ "pickled",
  "roxmltree",
  "rust-crypto",
  "rust-embed",
  "serde",
- "serde-pickle",
  "serde_json",
  "strum",
  "strum_macros",
