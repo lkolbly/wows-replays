@@ -610,6 +610,7 @@ dependencies = [
 [[package]]
 name = "serde-pickle"
 version = "1.1.1"
+source = "git+https://github.com/landaire/serde-pickle#2e02192aff04f1f01ec7b67bc384e7a70aec88f6"
 dependencies = [
  "byteorder",
  "iter-read",
