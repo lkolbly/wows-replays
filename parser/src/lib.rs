@@ -12,3 +12,9 @@ pub use error::*;
 pub use rpc::entitydefs::parse_scripts;
 pub use strum;
 pub use wowsreplay::*;
+
+#[cfg(feature = "arc")]
+pub type Rc<T> = std::sync::Arc<T>;
+
+#[cfg(not(feature = "arc"))]
+pub type Rc<T> = std::rc::Rc<T>;

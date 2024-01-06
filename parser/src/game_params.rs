@@ -1,9 +1,11 @@
-use std::{collections::HashMap, rc::Rc};
+use std::collections::HashMap;
 
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use strum_macros::{EnumString, IntoStaticStr};
 use variantly::Variantly;
+
+use crate::Rc;
 
 #[derive(
     Serialize,
