@@ -273,6 +273,7 @@ pub struct BattleReport {
     version: Version,
     map_name: String,
     game_mode: String,
+    game_type: String,
     match_group: String,
     player_entities: Vec<Rc<VehicleEntity>>,
     game_chat: Vec<GameMessage>,
@@ -305,6 +306,10 @@ impl BattleReport {
 
     pub fn game_mode(&self) -> &str {
         self.game_mode.as_ref()
+    }
+
+    pub fn game_type(&self) -> &str {
+        self.game_type.as_ref()
     }
 }
 
@@ -375,7 +380,7 @@ where
     }
 
     pub fn game_mode(&self) -> String {
-        let id = format!("IDS_{}", self.game_meta.scenario.to_uppercase());
+        let id = format!("IDS_SCENARIO_{}", self.game_meta.scenario.to_uppercase());
         self.game_resources
             .localized_name_from_id(&id)
             .unwrap_or_else(|| self.game_meta.scenario.clone())
@@ -398,6 +403,13 @@ where
 
     pub fn game_version(&self) -> &str {
         self.game_meta.clientVersionFromExe.as_ref()
+    }
+
+    pub fn game_type(&self) -> String {
+        let id = format!("IDS_{}", self.game_meta.gameType.to_ascii_uppercase());
+        self.game_resources
+            .localized_name_from_id(&id)
+            .unwrap_or_else(|| self.game_meta.gameType.clone())
     }
 
     fn handle_chat_message<'packet>(
@@ -556,6 +568,7 @@ where
             match_group: self.match_group().to_owned(),
             map_name: self.map_name(),
             game_mode: self.game_mode(),
+            game_type: self.game_type(),
             player_entities,
             game_chat: self.game_chat,
         }
