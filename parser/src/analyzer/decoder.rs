@@ -151,6 +151,10 @@ pub struct OnArenaStateReceivedPlayer {
     pub team_id: i64,
     /// Their starting health
     pub max_health: i64,
+    /// ????
+    pub is_abuser: bool,
+    /// Has hidden stats
+    pub is_hidden: bool,
 
     /// This is a raw dump (with the values converted to strings) of every key for the player.
     // TODO: Replace String with the actual pickle value (which is cleanly serializable)
@@ -1105,10 +1109,32 @@ where
                         .cloned()
                         .expect("accountDBID is not an i64");
 
+                    let anti_abuse_enabled = values
+                        .get(keys.get("antiAbuseEnabled").unwrap())
+                        .unwrap()
+                        .bool_ref()
+                        .cloned()
+                        .expect("antiAbuseEnabled is not a bool");
+
+                    let is_abuser = values
+                        .get(keys.get("isAbuser").unwrap())
+                        .unwrap()
+                        .bool_ref()
+                        .cloned()
+                        .expect("isAbuser is not a bool");
+
+                    let is_hidden = values
+                        .get(keys.get("isHidden").unwrap())
+                        .unwrap()
+                        .bool_ref()
+                        .cloned()
+                        .expect("isHidden is not a bool");
+
                     let mut raw = HashMap::new();
                     for (k, v) in values.iter() {
                         raw.insert(*k, format!("{:?}", v));
                     }
+
                     players_out.push(OnArenaStateReceivedPlayer {
                         username,
                         clan,
@@ -1119,6 +1145,8 @@ where
                         entity_id: shipid,
                         team_id: team,
                         max_health: health,
+                        is_abuser,
+                        is_hidden,
                         raw,
                     });
                 }

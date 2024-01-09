@@ -133,6 +133,8 @@ pub struct Player {
     entity_id: u32,
     team_id: u32,
     max_health: u32,
+    is_abuser: bool,
+    is_hidden: bool,
     vehicle: Rc<Param>,
 }
 
@@ -153,6 +155,8 @@ impl Player {
             team_id: teamid,
             max_health: health,
             raw,
+            is_abuser,
+            is_hidden,
         } = player;
 
         Player {
@@ -169,6 +173,8 @@ impl Player {
                 .game_param_by_id(metadata_player.vehicle.id())
                 .expect("could not find vehicle"),
             relation: metadata_player.relation,
+            is_abuser: *is_abuser,
+            is_hidden: *is_hidden,
         }
     }
 
@@ -214,6 +220,14 @@ impl Player {
 
     pub fn db_id(&self) -> i64 {
         self.db_id
+    }
+
+    pub fn is_abuser(&self) -> bool {
+        self.is_abuser
+    }
+
+    pub fn is_hidden(&self) -> bool {
+        self.is_hidden
     }
 }
 
@@ -1605,7 +1619,7 @@ where
             crate::analyzer::decoder::DecodedPacketPayload::Unknown(_) => eprintln!("UNKNOWN"),
             crate::analyzer::decoder::DecodedPacketPayload::Invalid(_) => eprintln!("INVALID"),
             crate::analyzer::decoder::DecodedPacketPayload::Audit(_) => eprintln!("AUDIT"),
-            crate::analyzer::decoder::DecodedPacketPayload::BattleResults(_) => {
+            crate::analyzer::decoder::DecodedPacketPayload::BattleResults(_json) => {
                 eprintln!("BATTLE RESULTS")
             }
         }
