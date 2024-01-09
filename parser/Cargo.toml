@@ -15,7 +15,7 @@ serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 thiserror = "1.0.19"
 rust-crypto = "0.2.36"
-roxmltree = "0.14.1"
+roxmltree = "0.19"
 pickled = "1.0"
 rust-embed = "6.0.0"
 modular-bitfield = "0.11.2"
