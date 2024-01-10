@@ -441,6 +441,7 @@ where
         let channel = match audience {
             "battle_common" => ChatChannel::Global,
             "battle_team" => ChatChannel::Team,
+            "battle_prebattle" => ChatChannel::Division,
             other => panic!("unknown channel {}", other),
         };
 
@@ -1616,7 +1617,9 @@ where
             crate::analyzer::decoder::DecodedPacketPayload::CameraFreeLook(_) => {
                 eprintln!("CAMERA FREE LOOK")
             }
-            crate::analyzer::decoder::DecodedPacketPayload::Unknown(_) => eprintln!("UNKNOWN"),
+            crate::analyzer::decoder::DecodedPacketPayload::Unknown(packet_raw) => {
+                // std::fs::write(format!("unknown_{}.bin", packet.packet_type), packet_raw);
+            }
             crate::analyzer::decoder::DecodedPacketPayload::Invalid(_) => eprintln!("INVALID"),
             crate::analyzer::decoder::DecodedPacketPayload::Audit(_) => eprintln!("AUDIT"),
             crate::analyzer::decoder::DecodedPacketPayload::BattleResults(_json) => {
