@@ -37,8 +37,8 @@ struct TrailRenderer {
     meta: Option<ReplayMeta>,
 }
 
-impl Analyzer for TrailRenderer {
-    fn process(&mut self, packet: &Packet<'_, '_>) {
+impl AnalyzerMut for TrailRenderer {
+    fn process_mut(&mut self, packet: &Packet<'_, '_>) {
         match &packet.payload {
             PacketType::Position(pos) => {
                 if !self.trails.contains_key(&pos.pid) {
@@ -56,7 +56,7 @@ impl Analyzer for TrailRenderer {
         }
     }
 
-    fn finish(&self) {
+    fn finish(&mut self) {
         // Setup the render context
         let root = BitMapBackend::new(&self.output, (2048, 2048)).into_drawing_area();
         root.fill(&BLACK).unwrap();

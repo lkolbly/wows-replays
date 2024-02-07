@@ -1,10 +1,11 @@
+use kinded::Kinded;
 use nom::{
     bytes::complete::take, number::complete::le_f32, number::complete::le_i32,
     number::complete::le_i64, number::complete::le_u16, number::complete::le_u32,
     number::complete::le_u8,
 };
 
-use serde_derive::Serialize;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::convert::TryInto;
 
@@ -78,6 +79,7 @@ pub struct EntityMethodPacket<'argtype> {
 #[derive(Debug, Serialize)]
 pub struct EntityCreatePacket<'argtype> {
     pub entity_id: u32,
+    pub spec_idx: usize,
     pub entity_type: &'argtype str,
     pub space_id: u32,
     pub vehicle_id: u32,
@@ -106,21 +108,22 @@ pub struct InvalidPacket<'a> {
 }
 
 #[derive(Debug, Serialize)]
-pub struct BasePlayerCreatePacket<'replay, 'argtype> {
+pub struct BasePlayerCreatePacket<'argtype> {
     pub entity_id: u32,
     pub entity_type: &'argtype str,
-    pub state: &'replay [u8],
+    pub props: HashMap<&'argtype str, crate::rpc::typedefs::ArgValue<'argtype>>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct CellPlayerCreatePacket<'replay> {
+pub struct CellPlayerCreatePacket<'argtype> {
     pub entity_id: u32,
+    pub entity_type: &'argtype str,
     pub space_id: u32,
     pub unknown: u16,
     pub vehicle_id: u32,
     pub position: Vec3,
     pub rotation: Rot3,
-    pub value: &'replay [u8],
+    pub props: HashMap<&'argtype str, crate::rpc::typedefs::ArgValue<'argtype>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -176,11 +179,11 @@ pub struct MapPacket<'replay> {
     pub unknown: u8, // bool?
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Kinded)]
 pub enum PacketType<'replay, 'argtype> {
     Position(PositionPacket),
-    BasePlayerCreate(BasePlayerCreatePacket<'replay, 'argtype>),
-    CellPlayerCreate(CellPlayerCreatePacket<'replay>),
+    BasePlayerCreate(BasePlayerCreatePacket<'argtype>),
+    CellPlayerCreate(CellPlayerCreatePacket<'argtype>),
     EntityEnter(EntityEnterPacket),
     EntityLeave(EntityLeavePacket),
     EntityCreate(EntityCreatePacket<'argtype>),
@@ -194,6 +197,7 @@ pub enum PacketType<'replay, 'argtype> {
     CameraMode(u32),
     CameraFreeLook(u8),
     Map(MapPacket<'replay>),
+    BattleResults(&'replay str),
     Unknown(&'replay [u8]),
 
     /// These are packets which we thought we understood, but couldn't parse
@@ -209,18 +213,19 @@ pub struct Packet<'replay, 'argtype> {
     pub raw: &'replay [u8],
 }
 
-struct Entity<'argtype> {
+#[derive(Debug)]
+pub struct Entity<'argtype> {
     entity_type: u16,
     properties: Vec<ArgValue<'argtype>>,
 }
 
 pub struct Parser<'argtype> {
-    specs: &'argtype Vec<EntitySpec>,
+    specs: &'argtype [EntitySpec],
     entities: HashMap<u32, Entity<'argtype>>,
 }
 
 impl<'argtype> Parser<'argtype> {
-    pub fn new(entities: &'argtype Vec<EntitySpec>) -> Parser {
+    pub fn new(entities: &'argtype [EntitySpec]) -> Parser {
         Parser {
             specs: entities,
             entities: HashMap::new(),
@@ -294,6 +299,23 @@ impl<'argtype> Parser<'argtype> {
         ))
     }
 
+    fn parse_battle_results<'replay, 'b>(
+        &'b mut self,
+        i: &'replay [u8],
+    ) -> IResult<&'replay [u8], PacketType<'replay, 'argtype>> {
+        let (i, len) = le_u32(i)?;
+        assert_eq!(len as usize, i.len());
+        let (i, battle_results) = take(len)(i)?;
+
+        let results = std::str::from_utf8(battle_results).map_err(|_| {
+            failure_from_kind(crate::ErrorKind::ParsingFailure(
+                "Invalid UTF-8 data in battle results".to_string(),
+            ))
+        })?;
+
+        Ok((i, PacketType::BattleResults(results)))
+    }
+
     fn parse_nested_property_update<'replay, 'b>(
         &'b mut self,
         i: &'replay [u8],
@@ -302,9 +324,9 @@ impl<'argtype> Parser<'argtype> {
         let (i, is_slice) = le_u8(i)?;
         let (i, payload_size) = le_u8(i)?;
         let (i, unknown) = take(3usize)(i)?;
-        assert!(unknown == [0, 0, 0]); // Note: This is almost certainly the upper 3 bytes of a u32
+        assert_eq!(unknown, [0, 0, 0]); // Note: This is almost certainly the upper 3 bytes of a u32
         let payload = i;
-        assert!(payload_size as usize == payload.len());
+        assert_eq!(payload_size as usize, payload.len());
 
         let entity = self.entities.get_mut(&entity_id).unwrap();
         let entity_type = entity.entity_type;
@@ -464,14 +486,39 @@ impl<'argtype> Parser<'argtype> {
     ) -> IResult<&'a [u8], PacketType<'a, 'b>> {
         let (i, entity_id) = le_u32(i)?;
         let (i, entity_type) = le_u16(i)?;
-        let (i, state) = take(i.len())(i)?;
         let spec = &self.specs[entity_type as usize - 1];
+
+        let mut i = i;
+        let mut props: HashMap<&str, _> = HashMap::new();
+        let mut stored_props: Vec<_> = vec![];
+        for prop_id in 0..spec.base_properties.len() {
+            let spec = &spec.base_properties[prop_id as usize];
+            let (new_i, value) = match spec.prop_type.parse_value(i) {
+                Ok(x) => x,
+                Err(e) => {
+                    panic!("ERROR");
+                    return Err(failure_from_kind(crate::ErrorKind::UnableToParseRpcValue {
+                        method: format!("BasePlayerCreate::{}", spec.name),
+                        argnum: prop_id as usize,
+                        argtype: format!("{:?}", spec),
+                        packet: i.to_vec(),
+                        error: format!("{:?}", e),
+                    }));
+                }
+            };
+            i = new_i;
+            stored_props.push(value.clone());
+            props.insert(&spec.name, value);
+        }
+
+        //assert!(i.is_empty());
+
         self.entities.insert(
             entity_id,
             Entity {
                 entity_type,
                 // TODO: Parse the state
-                properties: vec![],
+                properties: stored_props,
             },
         );
         Ok((
@@ -479,7 +526,7 @@ impl<'argtype> Parser<'argtype> {
             PacketType::BasePlayerCreate(BasePlayerCreatePacket {
                 entity_id,
                 entity_type: &spec.name,
-                state,
+                props,
             }),
         ))
     }
@@ -536,6 +583,7 @@ impl<'argtype> Parser<'argtype> {
             i,
             PacketType::EntityCreate(EntityCreatePacket {
                 entity_id,
+                spec_idx: entity_type as usize,
                 entity_type: &self.specs[entity_type as usize - 1].name,
                 space_id,
                 vehicle_id,
@@ -553,12 +601,12 @@ impl<'argtype> Parser<'argtype> {
     ) -> IResult<&'a [u8], PacketType<'a, 'b>> {
         let (i, entity_id) = le_u32(i)?;
         let (i, space_id) = le_u32(i)?;
-        //let (i, unknown) = le_u16(i)?;
+        // let (i, _unknown) = le_u16(i)?;
         let (i, vehicle_id) = le_u32(i)?;
         let (i, position) = Vec3::parse(i)?;
         let (i, rotation) = Rot3::parse(i)?;
-        let (i, vlen) = le_u32(i)?;
-        let (i, value) = take(vlen)(i)?;
+        let (i, props_len) = le_u32(i)?;
+        let (i, props_data) = take(props_len)(i)?;
 
         if !self.entities.contains_key(&entity_id) {
             panic!(
@@ -584,29 +632,41 @@ impl<'argtype> Parser<'argtype> {
         );*/
         let entity_type = self.entities.get(&entity_id).unwrap().entity_type;
         let spec = &self.specs[entity_type as usize - 1];
-        let mut value = value;
-        let mut prop_values = vec![];
-        for property in spec.internal_properties.iter() {
-            //println!("{}: {}", idx, property.name);
-            //println!("{:#?}", property.prop_type);
-            //println!("{:?}", value);
-            let (new_value, prop_value) = property.prop_type.parse_value(value).unwrap();
-            //println!("{:?}", prop_value);
-            value = new_value;
-            prop_values.push(prop_value);
+
+        let mut i = props_data;
+        let mut props: HashMap<&str, _> = HashMap::new();
+        let mut stored_props: Vec<_> = vec![];
+        for prop_id in 0..spec.internal_properties.len() {
+            let spec = &spec.internal_properties[prop_id as usize];
+            let (new_i, value) = match spec.prop_type.parse_value(i) {
+                Ok(x) => x,
+                Err(e) => {
+                    panic!("ERROR");
+                    return Err(failure_from_kind(crate::ErrorKind::UnableToParseRpcValue {
+                        method: format!("CellPlayerCreate::{}", spec.name),
+                        argnum: prop_id as usize,
+                        argtype: format!("{:?}", spec),
+                        packet: i.to_vec(),
+                        error: format!("{:?}", e),
+                    }));
+                }
+            };
+            i = new_i;
+            stored_props.push(value.clone());
+            props.insert(&spec.name, value);
         }
-        //println!("CellPlayerCreate properties: {:?}", prop_values);
 
         Ok((
             i,
             PacketType::CellPlayerCreate(CellPlayerCreatePacket {
                 entity_id,
+                entity_type: &spec.name,
                 vehicle_id,
                 space_id,
                 position,
                 rotation,
                 unknown: 5,
-                value,
+                props,
             }),
         ))
     }
@@ -646,6 +706,7 @@ impl<'argtype> Parser<'argtype> {
         &'b mut self,
         i: &'a [u8],
     ) -> IResult<&'a [u8], PacketType<'a, 'b>> {
+        std::fs::write("map.bin", i);
         let (i, space_id) = le_u32(i)?;
         let (i, arena_id) = le_i64(i)?;
         let (i, unknown1) = le_u32(i)?;
@@ -672,7 +733,7 @@ impl<'argtype> Parser<'argtype> {
     fn parse_naked_packet<'a, 'b>(
         &'b mut self,
         packet_type: u32,
-        i: &'a [u8],
+        packet: &'a [u8],
     ) -> IResult<&'a [u8], PacketType<'a, 'b>> {
         /*
         PACKETS_MAPPING = {
@@ -692,23 +753,24 @@ impl<'argtype> Parser<'argtype> {
         */
         let (i, payload) = match packet_type {
             //0x7 | 0x8 => self.parse_entity_packet(version, packet_type, i)?,
-            0x0 => self.parse_base_player_create(i)?,
-            0x1 => self.parse_cell_player_create(i)?,
-            0x3 => self.parse_entity_enter(i)?,
-            0x4 => self.parse_entity_leave(i)?,
-            0x5 => self.parse_entity_create(i)?,
-            0x7 => self.parse_entity_property_packet(i)?,
-            0x8 => self.parse_entity_method_packet(i)?,
-            0xA => self.parse_position_packet(i)?,
-            0x16 => self.parse_version_packet(i)?,
-            0x22 => self.parse_nested_property_update(i)?,
-            0x24 => self.parse_camera_packet(i)?, // Note: We suspect that 0x18 is this also
-            0x26 => self.parse_camera_mode_packet(i)?,
-            0x27 => self.parse_map_packet(i)?,
-            0x2b => self.parse_player_orientation_packet(i)?,
-            0x2e => self.parse_camera_freelook_packet(i)?,
-            0x31 => self.parse_cruise_state(i)?,
-            _ => self.parse_unknown_packet(i, i.len().try_into().unwrap())?,
+            0x0 => self.parse_base_player_create(packet)?,
+            0x1 => self.parse_cell_player_create(packet)?,
+            0x3 => self.parse_entity_enter(packet)?,
+            0x4 => self.parse_entity_leave(packet)?,
+            0x5 => self.parse_entity_create(packet)?,
+            0x7 => self.parse_entity_property_packet(packet)?,
+            0x8 => self.parse_entity_method_packet(packet)?,
+            0xA => self.parse_position_packet(packet)?,
+            0x16 => self.parse_version_packet(packet)?,
+            0x22 => self.parse_battle_results(packet)?,
+            0x23 => self.parse_nested_property_update(packet)?,
+            0x25 => self.parse_camera_packet(packet)?, // Note: We suspect that 0x18 is this also
+            0x27 => self.parse_camera_mode_packet(packet)?,
+            0x28 => self.parse_map_packet(packet)?,
+            0x2c => self.parse_player_orientation_packet(packet)?,
+            0x2f => self.parse_camera_freelook_packet(packet)?,
+            0x32 => self.parse_cruise_state(packet)?,
+            _ => self.parse_unknown_packet(packet, packet.len().try_into().unwrap())?,
         };
         Ok((i, payload))
     }
@@ -717,9 +779,9 @@ impl<'argtype> Parser<'argtype> {
         let (i, packet_size) = le_u32(i)?;
         let (i, packet_type) = le_u32(i)?;
         let (i, clock) = le_f32(i)?;
-        let (remaining, i) = take(packet_size)(i)?;
-        let raw = i;
-        let (_i, payload) = match self.parse_naked_packet(packet_type, i) {
+        let (remaining, packet_data) = take(packet_size)(i)?;
+        let raw = packet_data;
+        let (_i, payload) = match self.parse_naked_packet(packet_type, packet_data) {
             Ok(x) => x,
             Err(nom::Err::Failure(Error {
                 kind: ErrorKind::UnsupportedReplayVersion(n),
@@ -729,10 +791,10 @@ impl<'argtype> Parser<'argtype> {
             }
             Err(e) => {
                 (
-                    &i[0..0], // Empty reference
+                    &packet_data[0..0], // Empty reference
                     PacketType::Invalid(InvalidPacket {
                         message: format!("{:?}", e),
-                        raw: i,
+                        raw: packet_data,
                     }),
                 )
             }
@@ -751,10 +813,24 @@ impl<'argtype> Parser<'argtype> {
         ))
     }
 
-    pub fn parse_packets<'a, 'b, P: PacketProcessor>(
+    pub fn parse_packets_mut<'a, 'b, P: PacketProcessorMut>(
         &'b mut self,
         i: &'a [u8],
         p: &mut P,
+    ) -> Result<(), ErrorKind> {
+        let mut i = i;
+        while i.len() > 0 {
+            let (remaining, packet) = self.parse_packet(i)?;
+            i = remaining;
+            p.process_mut(packet);
+        }
+        Ok(())
+    }
+
+    pub fn parse_packets<'a, 'b, P: PacketProcessor>(
+        &'b mut self,
+        i: &'a [u8],
+        p: &P,
     ) -> Result<(), ErrorKind> {
         let mut i = i;
         while i.len() > 0 {
@@ -767,5 +843,8 @@ impl<'argtype> Parser<'argtype> {
 }
 
 pub trait PacketProcessor {
-    fn process(&mut self, packet: Packet<'_, '_>);
+    fn process(&self, packet: Packet<'_, '_>);
+}
+pub trait PacketProcessorMut {
+    fn process_mut(&mut self, packet: Packet<'_, '_>);
 }

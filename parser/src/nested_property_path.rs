@@ -1,6 +1,6 @@
 use crate::rpc::typedefs::{ArgType, ArgValue};
 use bitreader::BitReader;
-use serde_derive::Serialize;
+use serde::Serialize;
 
 #[derive(Debug, Serialize)]
 pub enum PropertyNestLevel<'argtype> {

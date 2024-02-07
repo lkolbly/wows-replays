@@ -63,8 +63,8 @@ struct DamageMonitor {
     damages: Vec<DamageVector>,
 }
 
-impl Analyzer for DamageMonitor {
-    fn finish(&self) {
+impl AnalyzerMut for DamageMonitor {
+    fn finish(&mut self) {
         let start = std::time::Instant::now();
 
         // Setup the render context
@@ -220,7 +220,7 @@ impl Analyzer for DamageMonitor {
         println!("Trail render time = {:?}", start.elapsed());
     }
 
-    fn process(&mut self, packet: &Packet<'_, '_>) {
+    fn process_mut(&mut self, packet: &Packet<'_, '_>) {
         let time = packet.clock;
         let minutes = (time / 60.0).floor() as i32;
         let seconds = (time - minutes as f32 * 60.0).floor() as i32;
@@ -259,22 +259,22 @@ impl Analyzer for DamageMonitor {
                 args,
             }) => {
                 if *method == "receiveDamageStat" {
-                    let value = serde_pickle::de::value_from_slice(
+                    let value = pickled::de::value_from_slice(
                         match &args[0] {
                             wows_replays::rpc::typedefs::ArgValue::Blob(x) => x,
                             _ => panic!("foo"),
                         },
-                        serde_pickle::de::DeOptions::new(),
+                        pickled::de::DeOptions::new(),
                     )
                     .unwrap();
                     println!("{}: receiveDamageStat({}: {:#?})", time, entity_id, value);
                 } else if *method == "receiveDamageReport" {
-                    let value = serde_pickle::de::value_from_slice(
+                    let value = pickled::de::value_from_slice(
                         match &args[0] {
                             wows_replays::rpc::typedefs::ArgValue::Blob(x) => x,
                             _ => panic!("foo"),
                         },
-                        serde_pickle::de::DeOptions::new(),
+                        pickled::de::DeOptions::new(),
                     )
                     .unwrap();
                     println!(

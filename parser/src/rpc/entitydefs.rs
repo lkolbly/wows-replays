@@ -1,5 +1,8 @@
 //use crate::script_type::TypeAliases;
-use crate::rpc::typedefs::{parse_aliases, parse_type, ArgType, TypeAliases};
+use crate::{
+    rpc::typedefs::{parse_aliases, parse_type, ArgType, TypeAliases},
+    version::DataFileLoader,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Flags {
@@ -79,6 +82,7 @@ pub struct EntitySpec {
     pub client_methods: Vec<Method>,
     pub properties: Vec<Property>,
     pub internal_properties: Vec<Property>,
+    pub base_properties: Vec<Property>,
 }
 
 fn child_by_name<'a, 'b>(
@@ -255,7 +259,7 @@ fn parse_def(def: &[u8], aliases: &TypeAliases) -> DefFile {
 }
 
 pub fn parse_scripts(
-    gamedata: &crate::version::Datafiles,
+    gamedata: &impl DataFileLoader,
 ) -> Result<Vec<EntitySpec>, crate::error::ErrorKind> {
     /*let alias_path = gamedata.lookup("scripts/entity_defs/alias.xml");
 
@@ -360,7 +364,7 @@ pub fn parse_scripts(
             EntityFlags.CELL_PUBLIC_AND_OWN |
             EntityFlags.ALL_CLIENTS
         */
-        let internal_properties = properties
+        let mut internal_properties: Vec<_> = properties
             .iter()
             .filter(|property| {
                 property.flags == Flags::AllClients
@@ -370,6 +374,16 @@ pub fn parse_scripts(
             })
             .map(|property| (*property).clone())
             .collect();
+
+        //internal_properties.sort_by_key(|prop| prop.prop_type.sort_size());
+
+        let mut base_properties: Vec<_> = properties
+            .iter()
+            .filter(|property| property.flags == Flags::BaseAndClient)
+            .map(|property| (*property).clone())
+            .collect();
+
+        //base_properties.sort_by_key(|prop| prop.prop_type.sort_size());
 
         properties = properties
             .iter()
@@ -399,6 +413,7 @@ pub fn parse_scripts(
             client_methods,
             properties,
             internal_properties,
+            base_properties,
         });
     }
 

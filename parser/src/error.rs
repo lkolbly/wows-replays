@@ -23,6 +23,11 @@ pub enum ErrorKind {
         #[from]
         err: std::str::Utf8Error,
     },
+    #[error("Error interpreting UTF-8 string")]
+    FromUtf8Error {
+        #[from]
+        err: std::string::FromUtf8Error,
+    },
     #[error("Unsupported replay file version found")]
     UnsupportedReplayVersion(String),
     #[error("Unable to process packet")]
@@ -92,6 +97,15 @@ impl std::convert::From<nom::Err<Error>> for ErrorKind {
 
 impl std::convert::From<std::str::Utf8Error> for Error {
     fn from(x: std::str::Utf8Error) -> Error {
+        Error {
+            kind: x.into(),
+            backtrace: vec![],
+        }
+    }
+}
+
+impl std::convert::From<std::string::FromUtf8Error> for Error {
+    fn from(x: std::string::FromUtf8Error) -> Error {
         Error {
             kind: x.into(),
             backtrace: vec![],
