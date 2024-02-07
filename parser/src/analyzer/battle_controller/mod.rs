@@ -1,5 +1,7 @@
-mod battle_controller;
+mod controller;
+mod observer;
 pub mod player;
 pub mod ship;
 
-pub use battle_controller::*;
+pub use controller::*;
+pub use observer::*;

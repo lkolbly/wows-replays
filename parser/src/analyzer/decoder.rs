@@ -1,6 +1,7 @@
 use crate::analyzer::{Analyzer, AnalyzerBuilder};
 use crate::packet2::{Entity, EntityMethodPacket, Packet, PacketType};
 use crate::{unpack_rpc_args, ErrorKind, IResult};
+use kinded::Kinded;
 use modular_bitfield::prelude::*;
 use nom::number::complete::{le_f32, le_i32, le_u16, le_u32, le_u64, le_u8};
 use pickled::Value;
@@ -263,7 +264,8 @@ pub struct ChatMessageExtra {
     player_name: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Kinded)]
+#[kinded(derive(Serialize))]
 pub enum DecodedPacketPayload<'replay, 'argtype, 'rawpacket> {
     /// Represents a chat message. Note that this only includes text chats, voicelines
     /// are represented by the VoiceLine variant.

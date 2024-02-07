@@ -511,8 +511,6 @@ impl<'argtype> Parser<'argtype> {
             props.insert(&spec.name, value);
         }
 
-        eprintln!("BasePlayerCreate props: {:?}", props);
-
         //assert!(i.is_empty());
 
         self.entities.insert(

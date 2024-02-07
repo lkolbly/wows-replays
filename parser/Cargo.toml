@@ -25,6 +25,7 @@ variantly = "0.4"
 strum = "0.25"
 strum_macros = "0.25"
 derive_builder = "0.12"
+tracing = "0.1"
 
 [features]
 arc = []

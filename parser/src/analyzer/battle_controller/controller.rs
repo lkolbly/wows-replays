@@ -2,6 +2,7 @@ use std::{
     borrow::Borrow,
     cell::{Ref, RefCell},
     collections::HashMap,
+    fs::File,
     str::FromStr,
     sync::atomic::AtomicUsize,
     time::Duration,
@@ -13,6 +14,7 @@ use pickled::{HashableValue, Value};
 use serde::{Deserialize, Serialize};
 use strum::ParseError;
 use strum_macros::EnumString;
+use tracing::{debug, event, span, trace, warn, Level};
 use variantly::Variantly;
 
 static TIME_UNTIL_GAME_START: Duration = Duration::from_secs(30);
@@ -21,8 +23,8 @@ use crate::{
     analyzer::{
         analyzer::AnalyzerMut,
         decoder::{
-            ChatMessageExtra, DamageReceived, DeathCause, DecodedPacket, DecoderBuilder,
-            OnArenaStateReceivedPlayer,
+            ChatMessageExtra, DamageReceived, DeathCause, DecodedPacket, DecodedPacketPayloadKind,
+            DecoderBuilder, OnArenaStateReceivedPlayer,
         },
         Analyzer,
     },
@@ -434,6 +436,7 @@ where
         message: &str,
         extra_data: Option<ChatMessageExtra>,
     ) {
+        // System messages
         if sender_id == 0 {
             return;
         }
@@ -454,7 +457,7 @@ where
             }
         }
 
-        println!("chat message from sender {sender_name} in channel {channel:?}: {message}");
+        debug!("chat message from sender {sender_name} in channel {channel:?}: {message}");
 
         let message = GameMessage {
             sender_relation: sender_team.unwrap(),
@@ -464,6 +467,11 @@ where
         };
 
         self.game_chat.push(message.clone());
+        debug!(
+            "{:p} game chat len: {}",
+            &self.game_chat,
+            self.game_chat.len()
+        );
 
         if let Some(event_handler) = self.event_handler.as_ref() {
             event_handler.on_chat_message(message);
@@ -504,6 +512,7 @@ where
                     id: packet.entity_id,
                     player: player.cloned(),
                     props,
+                    visibility_changed_at: 0.0,
                     captain,
                     damage: 0.0,
                     death_info: None,
@@ -512,11 +521,11 @@ where
                 self.entities_by_id
                     .insert(packet.entity_id, Entity::Vehicle(vehicle.clone()));
             }
-            EntityType::BattleLogic => eprintln!("BattleLogic create"),
-            EntityType::InteractiveZone => eprintln!("InteractiveZone create"),
-            EntityType::SmokeScreen => eprintln!("SmokeScreen create"),
-            EntityType::BattleEntity => eprintln!("BattleEntity create"),
-            EntityType::Building => eprintln!("Building create"),
+            EntityType::BattleLogic => debug!("BattleLogic create"),
+            EntityType::InteractiveZone => debug!("InteractiveZone create"),
+            EntityType::SmokeScreen => debug!("SmokeScreen create"),
+            EntityType::BattleEntity => debug!("BattleEntity create"),
+            EntityType::Building => debug!("Building create"),
         }
     }
 
@@ -665,6 +674,13 @@ pub struct CrewModifiersCompactParams {
 }
 
 trait UpdateFromReplayArgs {
+    fn update_by_name(&mut self, name: &str, value: &ArgValue<'_>) {
+        // This is far from optimal, but is an easy solution for now
+        let mut dict = HashMap::with_capacity(1);
+        dict.insert(name, value.clone());
+        self.update_from_args(&dict);
+    }
+
     fn update_from_args(&mut self, args: &HashMap<&str, ArgValue<'_>>);
 }
 
@@ -1092,62 +1108,68 @@ impl VehicleProps {
 }
 
 impl UpdateFromReplayArgs for VehicleProps {
+    fn update_by_name(&mut self, name: &str, value: &ArgValue<'_>) {
+        // This is far from optimal, but is an easy solution for now
+        let mut dict = HashMap::with_capacity(1);
+        dict.insert(name, value.clone());
+        self.update_from_args(&dict);
+    }
     fn update_from_args(&mut self, args: &HashMap<&str, ArgValue<'_>>) {
-        const IGNORE_MAP_BORDERS_KEY: &'static str = "ignoreMapBorders";
-        const AIR_DEFENSE_DISPERSION_RADIUS_KEY: &'static str = "airDefenseDispRadius";
-        const DEATH_SETTINGS_KEY: &'static str = "deathSettings";
-        const OWNER_KEY: &'static str = "owner";
-        const ATBA_TARGETS_KEY: &'static str = "atbaTargets";
-        const EFFECTS_KEY: &'static str = "effects";
-        const CREW_MODIFIERS_COMPACT_PARAMS_KEY: &'static str = "crewModifiersCompactParams";
-        const LASER_TARGET_LOCAL_POS_KEY: &'static str = "laserTargetLocalPos";
-        const ANTI_AIR_AUROS_KEY: &'static str = "antiAirAuras";
-        const SELECTED_WEAPON_KEY: &'static str = "selectedWeapon";
-        const REGENERATION_HEALTH_KEY: &'static str = "regenerationHealth";
-        const IS_ON_FORSAGE_KEY: &'static str = "isOnForsage";
-        const IS_IN_RAGE_MODE_KEY: &'static str = "isInRageMode";
-        const HAS_AIR_TARGETS_IN_RANGE_KEY: &'static str = "hasAirTargetsInRange";
-        const TORPEDO_LOCAL_POS_KEY: &'static str = "torpedoLocalPos";
-        const AIR_DEFENSE_TARGET_IDS_KEY: &'static str = "airDefenseTargetIds";
-        const BUOYANCY_KEY: &'static str = "buoyancy";
-        const MAX_HEALTH_KEY: &'static str = "maxHealth";
-        const DRAUGHT_KEY: &'static str = "draught";
-        const RUDDERS_ANGLE_KEY: &'static str = "ruddersAngle";
-        const TARGET_LOCAL_POSITION_KEY: &'static str = "targetLocalPos";
-        const TRIGGERED_SKILLS_DATA_KEY: &'static str = "triggeredSkillsData";
-        const REGENERATED_HEALTH_KEY: &'static str = "regeneratedHealth";
-        const BLOCKED_CONTROLS_KEY: &'static str = "blockedControls";
-        const IS_INVISIBLE_KEY: &'static str = "isInvisible";
-        const IS_FOG_HORN_ON_KEY: &'static str = "isFogHornOn";
-        const SERVER_SPEED_RAW_KEY: &'static str = "serverSpeedRaw";
-        const REGEN_CREW_HP_LIMIT_KEY: &'static str = "regenCrewHpLimit";
-        const MISCS_PRESETS_STATUS_KEY: &'static str = "miscsPresetsStatus";
-        const BUOYANCY_CURRENT_WATERLINE_KEY: &'static str = "buoyancyCurrentWaterline";
-        const IS_ALIVE_KEY: &'static str = "isAlive";
-        const IS_BOT_KEY: &'static str = "isBot";
-        const VISIBILITY_FLAGS_KEY: &'static str = "visibilityFlags";
-        const HEAT_INFOS_KEY: &'static str = "heatInfos";
-        const BUOYANCY_RUDDER_INDEX_KEY: &'static str = "buoyancyRudderIndex";
-        const IS_ANTI_AIR_MODE_KEY: &'static str = "isAntiAirMode";
-        const SPEED_SIGN_DIR_KEY: &'static str = "speedSignDir";
-        const OIL_LEAK_STATE_KEY: &'static str = "oilLeakState";
-        const SOUNDS_KEY: &'static str = "sounds";
-        const SHIP_CONFIG_KEY: &'static str = "shipConfig";
-        const WAVE_LOCAL_POS_KEY: &'static str = "waveLocalPos";
-        const HAS_ACTIVE_MAIN_SQUADRON_KEY: &'static str = "hasActiveMainSquadron";
-        const WEAPON_LOCK_FLAGS_KEY: &'static str = "weaponLockFlags";
-        const DEEP_RUDDERS_ANGLE_KEY: &'static str = "deepRuddersAngle";
-        const DEBUG_TEXT_KEY: &'static str = "debugText";
-        const HEALTH_KEY: &'static str = "health";
-        const ENGINE_DIR_KEY: &'static str = "engineDir";
-        const STATE_KEY: &'static str = "state";
-        const TEAM_ID_KEY: &'static str = "teamId";
-        const BUOYANCY_CURRENT_STATE_KEY: &'static str = "buoyancyCurrentState";
-        const UI_ENABLED_KEY: &'static str = "uiEnabled";
-        const RESPAWN_TIME_KEY: &'static str = "respawnTime";
-        const ENGINE_POWER_KEY: &'static str = "enginePower";
-        const MAX_SERVER_SPEED_RAW_KEY: &'static str = "maxServerSpeedRaw";
-        const BURNING_FLAGS_KEY: &'static str = "burningFlags";
+        const IGNORE_MAP_BORDERS_KEY: &str = "ignoreMapBorders";
+        const AIR_DEFENSE_DISPERSION_RADIUS_KEY: &str = "airDefenseDispRadius";
+        const DEATH_SETTINGS_KEY: &str = "deathSettings";
+        const OWNER_KEY: &str = "owner";
+        const ATBA_TARGETS_KEY: &str = "atbaTargets";
+        const EFFECTS_KEY: &str = "effects";
+        const CREW_MODIFIERS_COMPACT_PARAMS_KEY: &str = "crewModifiersCompactParams";
+        const LASER_TARGET_LOCAL_POS_KEY: &str = "laserTargetLocalPos";
+        const ANTI_AIR_AUROS_KEY: &str = "antiAirAuras";
+        const SELECTED_WEAPON_KEY: &str = "selectedWeapon";
+        const REGENERATION_HEALTH_KEY: &str = "regenerationHealth";
+        const IS_ON_FORSAGE_KEY: &str = "isOnForsage";
+        const IS_IN_RAGE_MODE_KEY: &str = "isInRageMode";
+        const HAS_AIR_TARGETS_IN_RANGE_KEY: &str = "hasAirTargetsInRange";
+        const TORPEDO_LOCAL_POS_KEY: &str = "torpedoLocalPos";
+        const AIR_DEFENSE_TARGET_IDS_KEY: &str = "airDefenseTargetIds";
+        const BUOYANCY_KEY: &str = "buoyancy";
+        const MAX_HEALTH_KEY: &str = "maxHealth";
+        const DRAUGHT_KEY: &str = "draught";
+        const RUDDERS_ANGLE_KEY: &str = "ruddersAngle";
+        const TARGET_LOCAL_POSITION_KEY: &str = "targetLocalPos";
+        const TRIGGERED_SKILLS_DATA_KEY: &str = "triggeredSkillsData";
+        const REGENERATED_HEALTH_KEY: &str = "regeneratedHealth";
+        const BLOCKED_CONTROLS_KEY: &str = "blockedControls";
+        const IS_INVISIBLE_KEY: &str = "isInvisible";
+        const IS_FOG_HORN_ON_KEY: &str = "isFogHornOn";
+        const SERVER_SPEED_RAW_KEY: &str = "serverSpeedRaw";
+        const REGEN_CREW_HP_LIMIT_KEY: &str = "regenCrewHpLimit";
+        const MISCS_PRESETS_STATUS_KEY: &str = "miscsPresetsStatus";
+        const BUOYANCY_CURRENT_WATERLINE_KEY: &str = "buoyancyCurrentWaterline";
+        const IS_ALIVE_KEY: &str = "isAlive";
+        const IS_BOT_KEY: &str = "isBot";
+        const VISIBILITY_FLAGS_KEY: &str = "visibilityFlags";
+        const HEAT_INFOS_KEY: &str = "heatInfos";
+        const BUOYANCY_RUDDER_INDEX_KEY: &str = "buoyancyRudderIndex";
+        const IS_ANTI_AIR_MODE_KEY: &str = "isAntiAirMode";
+        const SPEED_SIGN_DIR_KEY: &str = "speedSignDir";
+        const OIL_LEAK_STATE_KEY: &str = "oilLeakState";
+        const SOUNDS_KEY: &str = "sounds";
+        const SHIP_CONFIG_KEY: &str = "shipConfig";
+        const WAVE_LOCAL_POS_KEY: &str = "waveLocalPos";
+        const HAS_ACTIVE_MAIN_SQUADRON_KEY: &str = "hasActiveMainSquadron";
+        const WEAPON_LOCK_FLAGS_KEY: &str = "weaponLockFlags";
+        const DEEP_RUDDERS_ANGLE_KEY: &str = "deepRuddersAngle";
+        const DEBUG_TEXT_KEY: &str = "debugText";
+        const HEALTH_KEY: &str = "health";
+        const ENGINE_DIR_KEY: &str = "engineDir";
+        const STATE_KEY: &str = "state";
+        const TEAM_ID_KEY: &str = "teamId";
+        const BUOYANCY_CURRENT_STATE_KEY: &str = "buoyancyCurrentState";
+        const UI_ENABLED_KEY: &str = "uiEnabled";
+        const RESPAWN_TIME_KEY: &str = "respawnTime";
+        const ENGINE_POWER_KEY: &str = "enginePower";
+        const MAX_SERVER_SPEED_RAW_KEY: &str = "maxServerSpeedRaw";
+        const BURNING_FLAGS_KEY: &str = "burningFlags";
 
         set_arg_value!(self.ignore_map_borders, args, IGNORE_MAP_BORDERS_KEY, bool);
         set_arg_value!(
@@ -1346,6 +1368,7 @@ impl DeathInfo {
 pub struct VehicleEntity {
     id: u32,
     player: Option<Rc<Player>>,
+    visibility_changed_at: f32,
     props: VehicleProps,
     captain: Option<Rc<Param>>,
     damage: f32,
@@ -1471,7 +1494,11 @@ where
     G: ResourceLoader,
 {
     fn process_mut(&mut self, packet: &Packet<'_, '_>) {
+        let span = span!(Level::TRACE, "packet processing");
+        let _enter = span.enter();
+
         let decoded = DecodedPacket::from(&self.version, false, packet);
+        let payload_kind = decoded.payload.kind();
         match decoded.payload {
             crate::analyzer::decoder::DecodedPacketPayload::Chat {
                 entity_id,
@@ -1487,19 +1514,19 @@ where
                 is_global,
                 message,
             } => {
-                eprintln!("HANDLE VOICE LINE");
+                trace!("HANDLE VOICE LINE");
             }
-            crate::analyzer::decoder::DecodedPacketPayload::Ribbon(_) => {
-                eprintln!("HANDLE RIBBON")
+            crate::analyzer::decoder::DecodedPacketPayload::Ribbon(_ribbon) => {
+                trace!("HANDLE RIBBON")
             }
-            crate::analyzer::decoder::DecodedPacketPayload::Position(_) => {
-                eprintln!("HANDLE POSITION")
+            crate::analyzer::decoder::DecodedPacketPayload::Position(_pos) => {
+                trace!("HANDLE POSITION")
             }
-            crate::analyzer::decoder::DecodedPacketPayload::PlayerOrientation(_) => {
-                eprintln!("PLAYER ORIENTATION")
+            crate::analyzer::decoder::DecodedPacketPayload::PlayerOrientation(_orientation) => {
+                trace!("PLAYER ORIENTATION")
             }
-            crate::analyzer::decoder::DecodedPacketPayload::DamageStat(_) => {
-                eprintln!("DAMAGE STAT")
+            crate::analyzer::decoder::DecodedPacketPayload::DamageStat(_damage) => {
+                trace!("DAMAGE STAT")
             }
             crate::analyzer::decoder::DecodedPacketPayload::ShipDestroyed {
                 killer,
@@ -1513,14 +1540,19 @@ where
                     cause,
                 });
             }
-            crate::analyzer::decoder::DecodedPacketPayload::EntityMethod(_) => {
-                eprintln!("ENTITY METHOD")
+            crate::analyzer::decoder::DecodedPacketPayload::EntityMethod(method) => {
+                debug!("ENTITY METHOD, {:#?}", method)
             }
-            crate::analyzer::decoder::DecodedPacketPayload::EntityProperty(_) => {
-                eprintln!("ENTITY METHOD")
+            crate::analyzer::decoder::DecodedPacketPayload::EntityProperty(prop) => {
+                if let Some(entity) = self.entities_by_id.get(&prop.entity_id) {
+                    if let Some(vehicle) = entity.vehicle_ref() {
+                        let mut vehicle = RefCell::borrow_mut(&vehicle);
+                        vehicle.props.update_by_name(prop.property, &prop.value);
+                    }
+                }
             }
             crate::analyzer::decoder::DecodedPacketPayload::BasePlayerCreate(base) => {
-                eprintln!("BASE PLAYER CREATE");
+                trace!("BASE PLAYER CREATE");
             }
             crate::analyzer::decoder::DecodedPacketPayload::CellPlayerCreate(cell) => {
                 // let metadata_player = self
@@ -1536,13 +1568,13 @@ where
 
                 // self.player_entities
                 //     .insert(battle_player.entity_id, Rc::new(battle_player));
-                eprintln!("CELL PLAYER CREATE");
+                trace!("CELL PLAYER CREATE");
             }
             crate::analyzer::decoder::DecodedPacketPayload::EntityEnter(e) => {
-                eprintln!("ENTITY ENTER")
+                trace!("ENTITY ENTER")
             }
-            crate::analyzer::decoder::DecodedPacketPayload::EntityLeave(_) => {
-                eprintln!("ENTITY LEAVE")
+            crate::analyzer::decoder::DecodedPacketPayload::EntityLeave(_leave) => {
+                trace!("ENTITY LEAVE")
             }
             crate::analyzer::decoder::DecodedPacketPayload::EntityCreate(entity_create) => {
                 self.handle_entity_create(entity_create);
@@ -1573,7 +1605,7 @@ where
                     }
                 }
             }
-            crate::analyzer::decoder::DecodedPacketPayload::CheckPing(_) => eprintln!("CHECK PING"),
+            crate::analyzer::decoder::DecodedPacketPayload::CheckPing(_) => trace!("CHECK PING"),
             crate::analyzer::decoder::DecodedPacketPayload::DamageReceived {
                 victim,
                 aggressors,
@@ -1589,41 +1621,41 @@ where
                 }
             }
             crate::analyzer::decoder::DecodedPacketPayload::MinimapUpdate { updates, arg1 } => {
-                eprintln!("MINIMAP UPDATE")
+                trace!("MINIMAP UPDATE")
             }
             crate::analyzer::decoder::DecodedPacketPayload::PropertyUpdate(update) => {
                 if let Some(entity) = self.entities_by_id.get(&(update.entity_id as u32)) {
-                    //panic!("{:#?}", update);
+                    debug!("PROPERTY UPDATE: {:#?}", update);
                 }
             }
             crate::analyzer::decoder::DecodedPacketPayload::BattleEnd {
                 winning_team,
                 unknown,
-            } => eprintln!("BATTLE END"),
+            } => trace!("BATTLE END"),
             crate::analyzer::decoder::DecodedPacketPayload::Consumable {
                 entity,
                 consumable,
                 duration,
-            } => eprintln!("CONSUMABLE"),
-            crate::analyzer::decoder::DecodedPacketPayload::CruiseState { state, value } => {
-                eprintln!("CRUISE STATE")
+            } => {
+                trace!("CONSUMABLE");
             }
-            crate::analyzer::decoder::DecodedPacketPayload::Map(_) => eprintln!("MAP"),
-            crate::analyzer::decoder::DecodedPacketPayload::Version(_) => eprintln!("VERSION"),
-            crate::analyzer::decoder::DecodedPacketPayload::Camera(_) => eprintln!("CAMERA"),
+            crate::analyzer::decoder::DecodedPacketPayload::CruiseState { state, value } => {
+                trace!("CRUISE STATE")
+            }
+            crate::analyzer::decoder::DecodedPacketPayload::Map(_) => trace!("MAP"),
+            crate::analyzer::decoder::DecodedPacketPayload::Version(_) => trace!("VERSION"),
+            crate::analyzer::decoder::DecodedPacketPayload::Camera(_) => trace!("CAMERA"),
             crate::analyzer::decoder::DecodedPacketPayload::CameraMode(_) => {
-                eprintln!("CAMERA MODE")
+                trace!("CAMERA MODE")
             }
             crate::analyzer::decoder::DecodedPacketPayload::CameraFreeLook(_) => {
-                eprintln!("CAMERA FREE LOOK")
+                trace!("CAMERA FREE LOOK")
             }
-            crate::analyzer::decoder::DecodedPacketPayload::Unknown(packet_raw) => {
-                // std::fs::write(format!("unknown_{}.bin", packet.packet_type), packet_raw);
-            }
-            crate::analyzer::decoder::DecodedPacketPayload::Invalid(_) => eprintln!("INVALID"),
-            crate::analyzer::decoder::DecodedPacketPayload::Audit(_) => eprintln!("AUDIT"),
+            crate::analyzer::decoder::DecodedPacketPayload::Unknown(_) => trace!("UNKNOWN"),
+            crate::analyzer::decoder::DecodedPacketPayload::Invalid(_) => trace!("INVALID"),
+            crate::analyzer::decoder::DecodedPacketPayload::Audit(_) => trace!("AUDIT"),
             crate::analyzer::decoder::DecodedPacketPayload::BattleResults(_json) => {
-                eprintln!("BATTLE RESULTS")
+                trace!("BATTLE RESULTS")
             }
         }
     }
